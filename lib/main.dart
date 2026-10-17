@@ -38,7 +38,7 @@ class KeepPixelApp extends StatelessWidget {
             ),
           ),
         ),
-        cardTheme: CardTheme(
+        cardTheme: CardThemeData(
           color: Color(0xFF27272A),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(12),
