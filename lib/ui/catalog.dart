@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import '../core/api.dart';
+import '../core/downloads.dart';
 import '../core/models.dart';
 import 'game_detail.dart';
 import 'shared.dart';
@@ -8,10 +9,12 @@ import 'shared.dart';
 class CatalogPage extends StatefulWidget {
   final PixelApi api;
   final bool library;
+  final DownloadsController downloads;
   final VoidCallback onLibraryChanged;
   const CatalogPage(
       {super.key,
       required this.api,
+      required this.downloads,
       this.library = false,
       required this.onLibraryChanged});
   @override
@@ -25,6 +28,7 @@ class _CatalogPageState extends State<CatalogPage> {
   String? error;
   bool loading = true, more = false, loadingMore = false;
   int filter = 0, generation = 0;
+  String sort = 'newest';
   @override
   void initState() {
     super.initState();
@@ -52,7 +56,10 @@ class _CatalogPageState extends State<CatalogPage> {
       final rows = widget.library
           ? await widget.api.library()
           : await widget.api.games(
-              query: search.text.trim(), offset: append ? games.length : 0);
+              query: search.text.trim(),
+              offset: append ? games.length : 0,
+              filter: ['all', 'free', 'development'][filter],
+              sort: sort);
       if (!mounted || request != generation) return;
       setState(() {
         games = append ? [...games, ...rows] : rows;
@@ -70,10 +77,9 @@ class _CatalogPageState extends State<CatalogPage> {
     }
   }
 
-  void details(Game game) => showGame(context, widget.api, game, () {
-        widget.onLibraryChanged();
-        if (widget.library) load();
-      });
+  void details(Game game) =>
+      showGame(context, widget.api, game, widget.onLibraryChanged,
+          downloads: widget.downloads);
   @override
   Widget build(BuildContext context) {
     final visible = games
@@ -90,19 +96,16 @@ class _CatalogPageState extends State<CatalogPage> {
                     padding: EdgeInsets.fromLTRB(box.maxWidth > 700 ? 40 : 20,
                         12, box.maxWidth > 700 ? 40 : 20, 40),
                     children: [
-                      Text(
-                          widget.library
-                              ? 'Твоя библиотека'
-                              : 'Найди свою следующую игру',
-                          style: TextStyle(
-                              fontSize: box.maxWidth > 700 ? 30 : 25,
+                      Text(widget.library ? 'Твоя библиотека' : 'Магазин',
+                          style: const TextStyle(
+                              fontSize: 26,
                               fontWeight: FontWeight.w700,
                               letterSpacing: -1)),
                       const SizedBox(height: 10),
                       Text(
                           widget.library
                               ? 'Всё, что ты добавил. Всегда под рукой.'
-                              : 'Игры, новые миры и независимые авторы — в одном месте.',
+                              : 'Игры и приложения · каталог Keep Pixel',
                           style: const TextStyle(
                               color: muted, fontSize: 13, height: 1.6)),
                       const SizedBox(height: 26),
@@ -138,7 +141,7 @@ class _CatalogPageState extends State<CatalogPage> {
                         _Hero(
                             game: games.first,
                             onTap: () => details(games.first)),
-                        const SizedBox(height: 32)
+                        const SizedBox(height: 24)
                       ],
                       Wrap(spacing: 10, runSpacing: 8, children: [
                         for (final (i, name) in [
@@ -149,9 +152,40 @@ class _CatalogPageState extends State<CatalogPage> {
                           ChoiceChip(
                               label: Text(name),
                               selected: filter == i,
-                              onSelected: (_) => setState(() => filter = i))
+                              onSelected: (_) {
+                                setState(() => filter = i);
+                                load();
+                              })
                       ]),
-                      const SizedBox(height: 24),
+                      const SizedBox(height: 16),
+                      Row(children: [
+                        const Expanded(
+                            child: Text('Каталог',
+                                style: TextStyle(
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.w600))),
+                        IconButton(
+                            tooltip: 'Обновить каталог',
+                            onPressed: () => load(),
+                            icon: const Icon(Icons.refresh, size: 20)),
+                        DropdownButton<String>(
+                            value: sort,
+                            items: const [
+                              DropdownMenuItem(
+                                  value: 'newest', child: Text('Новые')),
+                              DropdownMenuItem(
+                                  value: 'title', child: Text('По названию')),
+                              DropdownMenuItem(
+                                  value: 'price', child: Text('По цене'))
+                            ],
+                            onChanged: (v) {
+                              if (v != null) {
+                                setState(() => sort = v);
+                                load();
+                              }
+                            })
+                      ]),
+                      const SizedBox(height: 16),
                       if (loading)
                         const Padding(
                             padding: EdgeInsets.all(72),
@@ -190,7 +224,7 @@ class _CatalogPageState extends State<CatalogPage> {
                                             : box.maxWidth > 560
                                                 ? 2
                                                 : 1,
-                                    mainAxisExtent: 310,
+                                    mainAxisExtent: 280,
                                     crossAxisSpacing: 20,
                                     mainAxisSpacing: 20),
                             itemCount: visible.length,
@@ -220,11 +254,11 @@ class _Hero extends StatelessWidget {
   @override
   Widget build(BuildContext context) => LayoutBuilder(
       builder: (context, box) => ClipRRect(
-          borderRadius: BorderRadius.circular(28),
+          borderRadius: BorderRadius.circular(18),
           child: Container(
               decoration: const BoxDecoration(
                   gradient: LinearGradient(
-                      colors: [Color(0xFF294336), Color(0xFF1B2C27)])),
+                      colors: [Color(0xFF293F60), Color(0xFF1A283E)])),
               child: Row(children: [
                 Expanded(
                     flex: 6,
@@ -236,10 +270,10 @@ class _Hero extends StatelessWidget {
                               Tag(game.released
                                   ? 'В ФОКУСЕ'
                                   : 'СКОРО В KEEP PIXEL'),
-                              const SizedBox(height: 22),
+                              const SizedBox(height: 16),
                               Text(game.title,
                                   style: TextStyle(
-                                      fontSize: box.maxWidth < 600 ? 25 : 36,
+                                      fontSize: box.maxWidth < 600 ? 22 : 28,
                                       fontWeight: FontWeight.w700,
                                       letterSpacing: -1,
                                       height: 1.15)),
@@ -248,7 +282,7 @@ class _Hero extends StatelessWidget {
                                   maxLines: 3,
                                   overflow: TextOverflow.ellipsis,
                                   style: const TextStyle(
-                                      color: Color(0xFFB3C7BB),
+                                      color: Color(0xFFB7C7DF),
                                       height: 1.6,
                                       fontSize: 13)),
                               const SizedBox(height: 24),
@@ -263,7 +297,7 @@ class _Hero extends StatelessWidget {
                   Expanded(
                       flex: 4,
                       child: SizedBox(
-                          height: 320,
+                          height: 250,
                           child: Artwork(game.banner, label: game.title))),
               ]))));
 }
@@ -279,11 +313,11 @@ class _GameCard extends StatelessWidget {
       clipBehavior: Clip.antiAlias,
       child: InkWell(
           onTap: onTap,
-          borderRadius: BorderRadius.circular(24),
+          borderRadius: BorderRadius.circular(16),
           child:
               Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             SizedBox(
-                height: 164, child: Artwork(game.cover, label: game.title)),
+                height: 144, child: Artwork(game.cover, label: game.title)),
             Expanded(
                 child: Padding(
                     padding: const EdgeInsets.all(18),

@@ -121,8 +121,8 @@ class _ProfilePageState extends State<ProfilePage> {
                             const SizedBox(height: 20),
                             Wrap(spacing: 16, runSpacing: 12, children: [
                               OutlinedButton.icon(
-                                  onPressed: () => openLink(
-                                      context, 'https://necsoura.ru/profile'),
+                                  onPressed: () => openLink(context,
+                                      '${widget.api.accountSite}/profile'),
                                   icon: const Icon(Icons.open_in_new_rounded,
                                       size: 16),
                                   label: const Text('Основной профиль')),
@@ -159,8 +159,8 @@ class _ProfileEditorState extends State<_ProfileEditor> {
   String? error;
   static const labels = {
     'display_name': 'Отображаемое имя',
-    'avatar': 'Фото — HTTPS-ссылка',
-    'banner': 'Шапка — HTTPS-ссылка',
+    'avatar': 'Фото — ссылка на изображение',
+    'banner': 'Шапка — ссылка на изображение',
     'bio': 'О себе'
   };
   @override
@@ -261,7 +261,12 @@ class _ProfileEditorState extends State<_ProfileEditor> {
                                           v.trim().isNotEmpty) {
                                         final uri = Uri.tryParse(v.trim());
                                         if (uri == null ||
-                                            uri.scheme != 'https' ||
+                                            !(['https'].contains(uri.scheme) ||
+                                                (uri.scheme == 'http' &&
+                                                    uri.host ==
+                                                        Uri.parse(widget
+                                                                .api.apiUrl)
+                                                            .host)) ||
                                             uri.host.isEmpty ||
                                             uri.userInfo.isNotEmpty) {
                                           return 'Нужна HTTPS-ссылка на изображение';

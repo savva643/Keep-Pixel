@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:async';
 import 'dart:io';
 import 'package:archive/archive.dart';
 import 'package:crypto/crypto.dart';
@@ -16,6 +17,42 @@ class GameInstaller {
   Future<Directory> _game(int id) async {
     if (id < 1) throw const FormatException('Некорректный ID игры');
     return Directory(p.join((await _root()).path, '$id'));
+  }
+
+  Future<Map<int, String>> installedGames() async {
+    if (!supported) return {};
+    final root = await _root();
+    if (!await root.exists()) return {};
+    final found = <int, String>{};
+    await for (final entry in root.list(followLinks: false)) {
+      if (entry is! Directory ||
+          !RegExp(r'^[1-9]\d*$').hasMatch(p.basename(entry.path))) {
+        continue;
+      }
+      final receipt = File(p.join(entry.path, '.keep-pixel.json'));
+      try {
+        if (await receipt.length() > 4096) continue;
+        final j = jsonDecode(await receipt.readAsString()) as Map;
+        if (j['version'] is String) {
+          found[int.parse(p.basename(entry.path))] = j['version'] as String;
+        }
+      } catch (_) {}
+    }
+    return found;
+  }
+
+  Future<void> uninstall(int id) async {
+    if (!supported) {
+      throw UnsupportedError('Управление установками доступно в Windows');
+    }
+    final root = await _root(), game = await _game(id);
+    if (!await game.exists()) return;
+    if (!p.isWithin(await root.resolveSymbolicLinks(),
+            await game.resolveSymbolicLinks()) ||
+        await FileSystemEntity.isLink(game.path)) {
+      throw const FormatException('Небезопасная папка установки');
+    }
+    await game.delete(recursive: true);
   }
 
   Future<bool> installed(int id, String version) async {
@@ -116,7 +153,8 @@ class GameInstaller {
     }
   }
 
-  Future<void> launch(int id, Map<String, dynamic> manifest) async {
+  Future<void> launch(int id, Map<String, dynamic> manifest,
+      {void Function()? onExit}) async {
     if (!supported) throw UnsupportedError('Запуск доступен в клиенте Windows');
     if (!await installed(id, '${manifest['version']}')) {
       throw const FormatException('Сначала установите актуальную версию игры');
@@ -138,8 +176,13 @@ class GameInstaller {
             await exe.resolveSymbolicLinks())) {
       throw const FormatException('Исполняемый файл игры не найден');
     }
-    await Process.start(exe.path, const [],
-        workingDirectory: root.path, mode: ProcessStartMode.detached);
+    final process =
+        await Process.start(exe.path, const [], workingDirectory: root.path);
+    unawaited(process.stdout.drain<void>());
+    unawaited(process.stderr.drain<void>());
+    unawaited(process.exitCode.then((_) {
+      onExit?.call();
+    }));
   }
 
   void cancel() => _cancel?.cancel('Загрузка отменена');

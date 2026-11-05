@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
@@ -29,8 +30,12 @@ Future<PixelApi> apiFor(http.Response Function(http.Request) handle,
     {bool signedIn = false}) async {
   FlutterSecureStorage.setMockInitialValues(signedIn
       ? {
-          'keep_pixel_session_v2':
-              jsonEncode({'token': 'session', 'refreshToken': 'refresh'})
+          'keep_pixel_session_v2': jsonEncode({
+            'token': 'session',
+            'refreshToken': 'refresh',
+            'apiUrl': 'https://api.example',
+            'authUrl': 'https://auth.example'
+          })
         }
       : {});
   final api = PixelApi(
@@ -46,6 +51,7 @@ http.Response json(Object value, [int status = 200]) =>
         headers: {'content-type': 'application/json; charset=utf-8'});
 
 void main() {
+  setUp(() => SharedPreferences.setMockInitialValues({}));
   for (final size in [const Size(390, 844), const Size(1440, 1000)]) {
     testWidgets('catalog and authenticated-only library fit $size',
         (tester) async {
@@ -56,7 +62,7 @@ void main() {
       final api = await apiFor((r) => json(games));
       await tester.pumpWidget(KeepPixelApp(api: api));
       await tester.pumpAndSettle();
-      expect(find.text('Найди свою следующую игру'), findsOneWidget);
+      expect(find.text('Магазин'), findsWidgets);
       expect(tester.takeException(), isNull);
       await tester.tap(find.text('Библиотека').last);
       await tester.pumpAndSettle();
