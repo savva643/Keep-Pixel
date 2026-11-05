@@ -4,6 +4,8 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:http/http.dart' as http;
 import 'models.dart';
+import 'runtime.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'password.dart';
 
 class ApiError implements Exception {
@@ -16,10 +18,13 @@ class ApiError implements Exception {
 
 class PixelApi extends ChangeNotifier {
   static const defaultApi = String.fromEnvironment('KEEP_PIXEL_API_URL',
-      defaultValue: 'https://necsoura.ru/api/keeppixel');
+      defaultValue: 'http://85.112.56.145:4002');
   static const defaultAuth = String.fromEnvironment('NECSOURA_AUTH_URL',
-      defaultValue: 'https://auth.keep-pixel.ru/api/auth');
-  final String apiUrl, authUrl;
+      defaultValue: 'http://85.112.56.145:3001/api/auth');
+  String apiUrl, authUrl;
+  int sessionGeneration = 0;
+  bool _usesDefaults = false;
+  bool get persistentSession => canPersistSession;
   final http.Client client;
   final FlutterSecureStorage storage;
   String? _token, _refresh, _pending2fa;
@@ -31,15 +36,37 @@ class PixelApi extends ChangeNotifier {
       this.authUrl = defaultAuth,
       http.Client? client,
       this.storage = const FlutterSecureStorage()})
-      : client = client ?? http.Client();
+      : client = client ?? http.Client() {
+    _usesDefaults = apiUrl == defaultApi && authUrl == defaultAuth;
+  }
+  String get accountSite {
+    final u = Uri.parse(apiUrl);
+    return Uri(
+            scheme: u.scheme,
+            host: u.host,
+            port: u.port == 4002 ? null : (u.hasPort ? u.port : null))
+        .origin;
+  }
+
   bool get signedIn => _token != null;
   Future<void> initialize() async {
     try {
-      final saved = await storage.read(key: 'keep_pixel_session_v2');
+      final prefs = await SharedPreferences.getInstance();
+      if (_usesDefaults) {
+        apiUrl = prefs.getString('keep_pixel_api_url') ?? apiUrl;
+        authUrl = prefs.getString('keep_pixel_auth_url') ?? authUrl;
+      }
+      final saved = canPersistSession
+          ? await storage.read(key: 'keep_pixel_session_v2')
+          : null;
       if (saved != null) {
         final j = jsonDecode(saved) as Map;
-        _token = j['token'] as String?;
-        _refresh = j['refreshToken'] as String?;
+        if (j['apiUrl'] != apiUrl || j['authUrl'] != authUrl) {
+          await storage.delete(key: 'keep_pixel_session_v2');
+        } else {
+          _token = j['token'] as String?;
+          _refresh = j['refreshToken'] as String?;
+        }
       }
     } catch (_) {
       startupError = 'Не удалось открыть сохранённый сеанс. Войдите снова.';
@@ -56,6 +83,7 @@ class PixelApi extends ChangeNotifier {
     if (authenticated && _token == null) {
       throw const ApiError('Войдите в Necsoura', status: 401);
     }
+    final generation = sessionGeneration;
     final request = http.Request(
         method, Uri.parse('${base.replaceAll(RegExp(r'/+$'), '')}/$path'));
     request.headers.addAll({
@@ -72,16 +100,21 @@ class PixelApi extends ChangeNotifier {
               await client.send(request).timeout(const Duration(seconds: 20)))
           .timeout(const Duration(seconds: 20));
     } on TimeoutException {
-      throw const ApiError('Сервер долго не отвечает. Попробуйте ещё раз.');
+      throw ApiError(
+          'Сервер ${request.url.host}:${request.url.port} долго не отвечает. Проверьте адрес и доступность Docker.');
     } on http.ClientException {
-      throw const ApiError('Нет соединения с сервером. Проверьте интернет.');
+      throw ApiError(
+          'Нет соединения с ${request.url.scheme}://${request.url.authority}. Проверьте адрес сервера, порт и Docker.');
+    }
+    if (generation != sessionGeneration) {
+      throw const ApiError('Сервер или сеанс изменён. Повторите действие.');
     }
     dynamic data;
     try {
       data = jsonDecode(utf8.decode(response.bodyBytes));
     } catch (_) {
       throw ApiError(
-          'Сервер вернул некорректный ответ (${response.statusCode})',
+          '${request.url.host}:${request.url.port} вернул ${response.statusCode} вместо API JSON. Проверьте адрес и маршрут сервиса.',
           status: response.statusCode);
     }
     if (response.statusCode == 401 &&
@@ -110,14 +143,25 @@ class PixelApi extends ChangeNotifier {
   }
 
   Future<void> _save(Map<String, dynamic> j) async {
+    final generation = sessionGeneration;
     if (j['token'] is! String || (j['token'] as String).isEmpty) {
       throw const ApiError('Сервер не выдал сеанс');
     }
     final token = j['token'] as String,
         refresh = j['refreshToken'] as String? ?? _refresh;
-    await storage.write(
-        key: 'keep_pixel_session_v2',
-        value: jsonEncode({'token': token, 'refreshToken': refresh}));
+    if (canPersistSession) {
+      await storage.write(
+          key: 'keep_pixel_session_v2',
+          value: jsonEncode({
+            'token': token,
+            'refreshToken': refresh,
+            'apiUrl': apiUrl,
+            'authUrl': authUrl
+          }));
+    }
+    if (generation != sessionGeneration) {
+      throw const ApiError('Сервер или сеанс изменён');
+    }
     _token = token;
     _refresh = refresh;
     notifyListeners();
@@ -167,11 +211,12 @@ class PixelApi extends ChangeNotifier {
   }
 
   Future<void> _clear() async {
+    sessionGeneration++;
     _token = null;
     _refresh = null;
     _pending2fa = null;
     notifyListeners();
-    await storage.delete(key: 'keep_pixel_session_v2');
+    if (canPersistSession) await storage.delete(key: 'keep_pixel_session_v2');
   }
 
   Future<void> logout() async {
@@ -186,13 +231,19 @@ class PixelApi extends ChangeNotifier {
     await _clear();
   }
 
-  Future<List<Game>> games({String query = '', int offset = 0}) async =>
+  Future<List<Game>> games(
+          {String query = '',
+          int offset = 0,
+          String filter = 'all',
+          String sort = 'newest'}) async =>
       (await _call(
               apiUrl,
               'games?${Uri(queryParameters: {
                     'q': query,
                     'limit': '40',
-                    'offset': '$offset'
+                    'offset': '$offset',
+                    'filter': filter,
+                    'sort': sort
                   }).query}') as List)
           .map((j) => Game.fromJson(Map<String, dynamic>.from(j)))
           .toList();
@@ -213,6 +264,75 @@ class PixelApi extends ChangeNotifier {
   Future<PixelProfile> updateProfile(Map<String, dynamic> patch) async =>
       PixelProfile.fromJson(Map<String, dynamic>.from(await _call(apiUrl, 'me',
           method: 'PATCH', body: {'overrides': patch}, authenticated: true)));
+  static String normalizeEndpoint(String value) {
+    final uri = Uri.tryParse(value.trim());
+    if (uri == null ||
+        !['http', 'https'].contains(uri.scheme) ||
+        uri.host.isEmpty ||
+        uri.userInfo.isNotEmpty ||
+        uri.hasQuery ||
+        uri.hasFragment) {
+      throw const ApiError(
+          'Укажите HTTP/HTTPS-адрес без логина, пароля и параметров');
+    }
+    return uri.toString().replaceAll(RegExp(r'/+$'), '');
+  }
+
+  Future<void> setEndpoints(String api, String auth) async {
+    final nextApi = normalizeEndpoint(api), nextAuth = normalizeEndpoint(auth);
+    if (nextApi == apiUrl && nextAuth == authUrl) return;
+    await _clear();
+    apiUrl = nextApi;
+    authUrl = nextAuth;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('keep_pixel_api_url', apiUrl);
+    await prefs.setString('keep_pixel_auth_url', authUrl);
+    startupError = null;
+    notifyListeners();
+  }
+
+  Future<String> checkConnection() async {
+    final health = await _call(apiUrl, 'health');
+    if (health is! Map || health['status'] != 'ok') {
+      throw const ApiError('По этому адресу отвечает другой сервис');
+    }
+    final pre = await _call(authUrl, 'prelogin',
+        method: 'POST', body: {'login': 'keep_pixel_connection_check'});
+    if (pre is! Map || ![1, 2].contains(pre['scheme'])) {
+      throw const ApiError(
+          'Адрес аккаунтов не соответствует Necsoura Auth API');
+    }
+    return 'Магазин и аккаунты доступны';
+  }
+
+  Future<List<PixelFriend>> friends({String section = ''}) async =>
+      (await _call(apiUrl, 'friends${section.isEmpty ? '' : '/$section'}',
+              authenticated: true) as List)
+          .map((x) => PixelFriend.fromJson(Map<String, dynamic>.from(x)))
+          .toList();
+  Future<List<PixelFriend>> searchPeople(String query) async =>
+      (await _call(apiUrl, 'people?${Uri(queryParameters: {'q': query}).query}',
+              authenticated: true) as List)
+          .map((x) => PixelFriend.fromJson(Map<String, dynamic>.from(x)))
+          .toList();
+  Future<void> requestFriend(String userId) async =>
+      _call(apiUrl, 'friends/requests',
+          method: 'POST', body: {'friend_id': userId}, authenticated: true);
+  Future<void> friendAction(PixelFriend friend, String action) async {
+    final target =
+        ['accept', 'reject'].contains(action) ? friend.relationId : friend.id;
+    await _call(
+        apiUrl, 'friends/$target${action == 'remove' ? '' : '/$action'}',
+        method: action == 'remove' ? 'DELETE' : 'POST',
+        body: {},
+        authenticated: true);
+  }
+
+  Future<void> presence({String status = 'online', int? gameId}) async =>
+      _call(apiUrl, 'me/presence',
+          method: 'POST',
+          body: {'status': status, 'game_id': gameId},
+          authenticated: true);
   @override
   void dispose() {
     client.close();

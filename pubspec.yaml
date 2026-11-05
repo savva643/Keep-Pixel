@@ -1,7 +1,7 @@
 name: keep_pixel
 description: "Keep Pixel — игры и приложения с аккаунтом Necsoura."
 publish_to: 'none'
-version: 1.1.0+2
+version: 1.2.0+3
 
 environment:
   sdk: ^3.5.1
@@ -9,6 +9,8 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+  shared_preferences: ^2.5.2
+  web: ^1.1.1
   http: ^1.2.2
   flutter_secure_storage: ^9.2.4
   pointycastle: ^3.9.1
@@ -32,9 +34,14 @@ flutter:
     - assets/images/
     - assets/translations/
     - assets/fonts/Montserrat_LICENSE.txt
+    - assets/fonts/Unbounded_LICENSE.txt
     - assets/fonts/Roboto_LICENSE.txt
     - assets/fonts/NotoSans_LICENSE.txt
   fonts:
+    - family: Unbounded
+      fonts:
+        - asset: assets/fonts/Unbounded.ttf
+          weight: 700
     - family: NotoSans
       fonts:
         - asset: assets/fonts/NotoSans-Regular.ttf

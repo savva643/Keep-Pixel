@@ -2,6 +2,7 @@ import 'package:bitsdojo_window/bitsdojo_window.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'core/api.dart';
+import 'core/installer.dart';
 import 'ui/shell.dart';
 
 void main() {
@@ -24,7 +25,8 @@ void main() {
 
 class KeepPixelApp extends StatelessWidget {
   final PixelApi api;
-  const KeepPixelApp({super.key, required this.api});
+  final GameInstaller Function()? installerFactory;
+  const KeepPixelApp({super.key, required this.api, this.installerFactory});
   @override
   Widget build(BuildContext context) => MaterialApp(
         title: 'Keep Pixel',
@@ -34,20 +36,20 @@ class KeepPixelApp extends StatelessWidget {
           brightness: Brightness.dark,
           fontFamily: 'Montserrat',
           fontFamilyFallback: const ['NotoSans'],
-          scaffoldBackgroundColor: const Color(0xFF101414),
+          scaffoldBackgroundColor: const Color(0xFF11161D),
           colorScheme: ColorScheme.fromSeed(
-              seedColor: const Color(0xFFAAE8BC),
+              seedColor: const Color(0xFF83B7FF),
               brightness: Brightness.dark,
-              surface: const Color(0xFF191F1E)),
+              surface: const Color(0xFF19212B)),
           cardTheme: CardThemeData(
               elevation: 0,
               margin: EdgeInsets.zero,
-              color: const Color(0xFF1C2422),
+              color: const Color(0xFF1C2632),
               shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(24))),
+                  borderRadius: BorderRadius.circular(16))),
           inputDecorationTheme: InputDecorationTheme(
               filled: true,
-              fillColor: const Color(0xFF222B28),
+              fillColor: const Color(0xFF202B38),
               border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(16),
                   borderSide: BorderSide.none)),
@@ -64,6 +66,6 @@ class KeepPixelApp extends StatelessWidget {
                   shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(16)))),
         ),
-        home: PixelShell(api: api),
+        home: PixelShell(api: api, installerFactory: installerFactory),
       );
 }

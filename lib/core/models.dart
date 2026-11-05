@@ -5,6 +5,7 @@ class Game {
   final List<String> platforms;
   final Map<String, dynamic> metadata;
   final bool owned;
+  final Map<String, dynamic> details;
   const Game(
       {required this.id,
       required this.title,
@@ -17,8 +18,10 @@ class Game {
       this.price = 0,
       this.platforms = const [],
       this.metadata = const {},
-      this.owned = false});
+      this.owned = false,
+      this.details = const {}});
   factory Game.fromJson(Map<String, dynamic> j) => Game(
+        details: j,
         id: int.parse('${j['id']}'),
         title: '${j['title'] ?? j['game'] ?? ''}',
         description: '${j['description'] ?? j['opica'] ?? ''}',
@@ -80,4 +83,41 @@ class PixelProfile {
   String get name =>
       fields['display_name']!.isEmpty ? 'Игрок' : fields['display_name']!;
   bool get customized => overrides.isNotEmpty;
+}
+
+class PixelFriend {
+  final String id,
+      relationId,
+      name,
+      username,
+      avatar,
+      status,
+      direction,
+      relationship;
+  const PixelFriend(
+      {required this.id,
+      this.relationId = '',
+      this.name = 'Игрок',
+      this.username = '',
+      this.avatar = '',
+      this.status = 'unknown',
+      this.direction = '',
+      this.relationship = 'none'});
+  factory PixelFriend.fromJson(Map<String, dynamic> j) => PixelFriend(
+        id: '${j['global_id'] ?? j['friend_id'] ?? ''}',
+        relationId: '${j['relation_id'] ?? j['id'] ?? ''}',
+        name: '${j['name'] ?? 'Игрок'}',
+        username: '${j['username'] ?? ''}',
+        avatar: '${j['avatar'] ?? ''}',
+        status: '${j['presence'] ?? 'unknown'}',
+        direction: '${j['direction'] ?? ''}',
+        relationship: '${j['relationship'] ?? j['status'] ?? 'none'}',
+      );
+  String get statusLabel => switch (status) {
+        'online' => 'В сети',
+        'in_game' => 'В игре',
+        'away' => 'Отошёл',
+        'offline' => 'Не в сети',
+        _ => 'Статус недоступен'
+      };
 }

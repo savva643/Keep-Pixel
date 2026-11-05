@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:http/http.dart' as http;
@@ -8,6 +9,7 @@ import 'package:keep_pixel/core/models.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+  setUp(() => SharedPreferences.setMockInitialValues({}));
   test(
       'real login derives the Necsoura key and completes the second factor without saving a pending token',
       () async {
@@ -59,8 +61,12 @@ void main() {
   test('protected calls refresh a session once and retry with the new bearer',
       () async {
     FlutterSecureStorage.setMockInitialValues({
-      'keep_pixel_session_v2':
-          jsonEncode({'token': 'expired', 'refreshToken': 'refresh'})
+      'keep_pixel_session_v2': jsonEncode({
+        'token': 'expired',
+        'refreshToken': 'refresh',
+        'apiUrl': 'https://api.example',
+        'authUrl': 'https://auth.example'
+      })
     });
     final requests = <http.Request>[];
     final api = PixelApi(
@@ -88,7 +94,8 @@ void main() {
   test('expired refresh clears credentials; HTTP errors are useful to callers',
       () async {
     FlutterSecureStorage.setMockInitialValues({
-      'keep_pixel_session_v2': '{"token":"expired","refreshToken":"invalid"}'
+      'keep_pixel_session_v2':
+          '{"token":"expired","refreshToken":"invalid","apiUrl":"https://api.example","authUrl":"https://auth.example"}'
     });
     final api = PixelApi(
         apiUrl: 'https://api.example',

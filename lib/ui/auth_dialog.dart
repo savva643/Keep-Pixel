@@ -128,8 +128,8 @@ class _LoginDialogState extends State<LoginDialog> {
                                             .error))),
                           if (!second)
                             TextButton(
-                                onPressed: () => openLink(
-                                    context, 'https://necsoura.ru/auth/login'),
+                                onPressed: () => openLink(context,
+                                    '${widget.api.accountSite}/auth/login'),
                                 child: const Text(
                                     'Забыли пароль? Восстановить в Necsoura')),
                           if (!second)
@@ -137,7 +137,7 @@ class _LoginDialogState extends State<LoginDialog> {
                                 padding: const EdgeInsets.only(top: 12),
                                 child: TextButton(
                                     onPressed: () => openLink(context,
-                                        'https://necsoura.ru/auth/register'),
+                                        '${widget.api.accountSite}/auth/register'),
                                     child: const Text(
                                         'Создать аккаунт Necsoura'))),
                         ])))),

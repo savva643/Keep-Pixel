@@ -1,5 +1,7 @@
 # Keep Pixel 1.1: обновление клиента и сервера
 
+> Для текущей версии и фактического сервера 85.112.56.145 используйте [UPDATE-1.2.md](UPDATE-1.2.md). Адреса доменов ниже относятся к прежней конфигурации.
+
 Канонический клиент — `savva643/Keep-Pixel`. В Necsoura синхронизирована копия `source/services/keeppixel/frontend-mobile`. Бэкенд — `source/services/keeppixel/backend`.
 
 ## Что работает

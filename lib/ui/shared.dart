@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-const muted = Color(0xFF9DAFA6);
-const accent = Color(0xFFB7EDC6);
+const muted = Color(0xFFA1AFBF);
+const accent = Color(0xFF91C2FF);
 
 void notice(BuildContext context, String message) =>
     ScaffoldMessenger.of(context).showSnackBar(
@@ -10,7 +10,7 @@ void notice(BuildContext context, String message) =>
 Future<void> openLink(BuildContext context, String url) async {
   final uri = Uri.tryParse(url);
   if (uri == null ||
-      uri.scheme != 'https' ||
+      !['http', 'https'].contains(uri.scheme) ||
       !await launchUrl(uri, mode: LaunchMode.externalApplication)) {
     if (context.mounted) notice(context, 'Не удалось открыть ссылку');
   }
@@ -22,31 +22,51 @@ class Artwork extends StatelessWidget {
   const Artwork(this.url, {super.key, this.label = 'Keep Pixel'});
   @override
   Widget build(BuildContext context) {
-    Widget placeholder() => Container(
-          decoration: const BoxDecoration(
-              gradient: LinearGradient(
-                  colors: [Color(0xFF334E45), Color(0xFF1F2935)],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight)),
-          child: Center(
-              child: Column(mainAxisSize: MainAxisSize.min, children: [
-            const Icon(Icons.extension_rounded,
-                size: 48, color: Color(0xFFABC8B6)),
-            const SizedBox(height: 12),
-            Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: Text(label,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(
-                        color: Color(0xFFCADBCF),
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600)))
-          ])),
-        );
+    Widget placeholder() => LayoutBuilder(builder: (context, box) {
+          if (box.maxWidth < 100 || box.maxHeight < 128) {
+            return Container(
+                color: const Color(0xFF344963),
+                child: Center(
+                    child: label.isEmpty
+                        ? const Icon(Icons.videogame_asset_outlined,
+                            size: 24, color: accent)
+                        : Text(label.characters.first.toUpperCase(),
+                            style: const TextStyle(
+                                fontSize: 22,
+                                fontWeight: FontWeight.w700,
+                                color: accent))));
+          }
+          return Container(
+            decoration: const BoxDecoration(
+                gradient: LinearGradient(
+                    colors: [Color(0xFF344963), Color(0xFF1F2935)],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight)),
+            child: Center(
+                child: Column(mainAxisSize: MainAxisSize.min, children: [
+              const Icon(Icons.extension_rounded,
+                  size: 48, color: Color(0xFFA4BDDF)),
+              const SizedBox(height: 12),
+              Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: Text(label,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                          color: Color(0xFFD0DDED),
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600)))
+            ])),
+          );
+        });
     final uri = Uri.tryParse(url);
-    if (uri?.scheme != 'https') return placeholder();
+    if (uri == null ||
+        !['http', 'https'].contains(uri.scheme) ||
+        uri.host.isEmpty ||
+        uri.userInfo.isNotEmpty) {
+      return placeholder();
+    }
     return Image.network(url,
         fit: BoxFit.cover,
         width: double.infinity,
