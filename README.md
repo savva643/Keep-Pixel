@@ -1,16 +1,18 @@
-# keep_pixel
+# Keep Pixel
 
-A new Flutter project.
+Магазин и библиотека игр с единым аккаунтом Necsoura. Flutter-клиент для ПК и телефонов; web для просмотра каталога и управления библиотекой.
 
-## Getting Started
+```sh
+flutter pub get
+flutter run -d windows
+```
 
-This project is a starting point for a Flutter application.
+Бэкенд находится в `savva643/Necsoura`, `source/services/keeppixel/backend`. Перед запуском новой версии обновите сервер: [инструкция, возможности и ограничения](docs/UPDATE.md).
 
-A few resources to get you started if this is your first Flutter project:
+Клиент использует настоящие Necsoura-сессии. Фото, шапка, имя и описание наследуются из общего профиля либо меняются только для Keep Pixel; ID, логин и username остаются общими.
 
-- [Lab: Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Cookbook: Useful Flutter samples](https://docs.flutter.dev/cookbook)
-
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+```sh
+flutter analyze
+flutter test
+flutter build web --release --no-web-resources-cdn
+```
