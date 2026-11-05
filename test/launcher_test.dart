@@ -74,6 +74,7 @@ void main() {
     final downloads = DownloadsController(api, factory: () => installer);
     await downloads.launch(game);
     expect(downloads.activeGameId, 1);
+    await expectLater(downloads.uninstall(game), throwsA(isA<ApiError>()));
     await expectLater(downloads.launch(game), throwsA(isA<ApiError>()));
     installer.finished!();
     expect(downloads.activeGameId, isNull);

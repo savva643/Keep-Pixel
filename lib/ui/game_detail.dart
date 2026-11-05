@@ -184,7 +184,7 @@ class _GameDetailState extends State<GameDetail> {
                         label: const Text('Отменить загрузку'))
                   else
                     FilledButton.icon(
-                        onPressed: busy
+                        onPressed: busy || manager.isRunning(game)
                             ? null
                             : installed
                                 ? launch
@@ -192,12 +192,16 @@ class _GameDetailState extends State<GameDetail> {
                         icon: Icon(installed
                             ? Icons.play_arrow_rounded
                             : Icons.download_rounded),
-                        label: Text(installed
-                            ? 'Играть'
-                            : manager.hasInstall(game)
-                                ? 'Обновить'
-                                : 'Установить')),
-                  if (manager.hasInstall(game) && job?.active != true)
+                        label: Text(manager.isRunning(game)
+                            ? 'Запущено'
+                            : installed
+                                ? 'Играть'
+                                : manager.hasInstall(game)
+                                    ? 'Обновить'
+                                    : 'Установить')),
+                  if (manager.hasInstall(game) &&
+                      job?.active != true &&
+                      !manager.isRunning(game))
                     TextButton(
                         onPressed: uninstall,
                         child: const Text('Удалить с устройства')),

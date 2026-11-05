@@ -64,10 +64,13 @@ class DownloadsController extends ChangeNotifier {
     }
   }
 
+  bool isRunning(Game g) => _runningGames.contains(g.id);
   bool isCurrent(Game g) => installed[g.id] == g.version;
   bool hasInstall(Game g) => installed.containsKey(g.id);
   void enqueue(Game g) {
-    if (!supported || jobs[g.id]?.active == true) return;
+    if (!supported ||
+        _runningGames.contains(g.id) ||
+        jobs[g.id]?.active == true) return;
     jobs[g.id] = DownloadJob(g, factory());
     _notify();
     unawaited(_pump());
@@ -155,6 +158,8 @@ class DownloadsController extends ChangeNotifier {
   }
 
   Future<void> uninstall(Game g) async {
+    if (_runningGames.contains(g.id))
+      throw const ApiError('Сначала завершите игру');
     if (jobs[g.id]?.active == true) {
       throw const ApiError('Сначала отмените загрузку');
     }
