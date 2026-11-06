@@ -18,3 +18,9 @@ flutter analyze
 flutter test
 flutter build web --release --no-web-resources-cdn
 ```
+
+## SDK для игр и игровая панель
+
+[SDK: UE5, Unity, Godot, Python и общий HTTP контракт](sdk/README.md).
+[Проверка исходного UE5-плагина и ограничения](docs/SDK-AUDIT.md).
+Версия 1.3 добавляет локальный API на игру и панель Shift+Tab в Windows runner.

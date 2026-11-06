@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'api.dart';
+import 'game_overlay.dart';
+import 'game_sdk.dart';
 import 'installer.dart';
 import 'models.dart';
 
@@ -28,6 +30,8 @@ class DownloadJob {
 
 class DownloadsController extends ChangeNotifier {
   final PixelApi api;
+  final overlay = GameOverlayController();
+  late final GameSdkHost sdk;
   final GameInstaller Function() factory;
   final Map<int, DownloadJob> jobs = {};
   Map<int, String> installed = {};
@@ -38,6 +42,7 @@ class DownloadsController extends ChangeNotifier {
   DownloadsController(this.api, {GameInstaller Function()? factory})
       : factory = factory ?? GameInstaller.new,
         _generation = api.sessionGeneration {
+    sdk = GameSdkHost(api, overlay);
     api.addListener(_sessionChanged);
   }
   bool get supported => factory().supported;
@@ -54,6 +59,10 @@ class DownloadsController extends ChangeNotifier {
   void _sessionChanged() {
     if (_generation != api.sessionGeneration) {
       _generation = api.sessionGeneration;
+      for (final id in _runningGames) {
+        sdk.revoke(id);
+        unawaited(overlay.unregister(id));
+      }
       _runningGames.clear();
       activeGameId = null;
       for (final j in jobs.values.where((j) => j.active)) {
@@ -129,8 +138,20 @@ class DownloadsController extends ChangeNotifier {
     _runningGames.add(g.id);
     activeGameId = g.id;
     try {
-      await factory().launch(g.id, manifest, onExit: () {
+      final environment = await sdk.create(g.id, g.title);
+      if (generation != api.sessionGeneration) {
+        sdk.revoke(g.id);
+        return;
+      }
+      await factory().launch(g.id, manifest, environment: environment,
+          onStarted: (pid) {
+        if (!_disposed && generation == api.sessionGeneration) {
+          unawaited(overlay.register(g.id, g.title, pid));
+        }
+      }, onExit: () {
         if (_disposed || generation != api.sessionGeneration) return;
+        sdk.revoke(g.id);
+        unawaited(overlay.unregister(g.id));
         _runningGames.remove(g.id);
         if (activeGameId == g.id) {
           activeGameId = _runningGames.isEmpty ? null : _runningGames.last;
@@ -145,6 +166,9 @@ class DownloadsController extends ChangeNotifier {
         _notify();
       });
     } catch (_) {
+      if (_disposed || generation != api.sessionGeneration) rethrow;
+      sdk.revoke(g.id);
+      unawaited(overlay.unregister(g.id));
       _runningGames.remove(g.id);
       if (activeGameId == g.id) {
         activeGameId = _runningGames.isEmpty ? null : _runningGames.last;
@@ -176,6 +200,10 @@ class DownloadsController extends ChangeNotifier {
   void dispose() {
     _disposed = true;
     api.removeListener(_sessionChanged);
+    sdk.dispose();
+    unawaited(Future.wait(_runningGames.map(overlay.unregister))
+        .whenComplete(overlay.dispose));
+    // Native cleanup is also performed when the runner window is destroyed.
     for (final j in jobs.values) {
       j.installer.cancel();
     }

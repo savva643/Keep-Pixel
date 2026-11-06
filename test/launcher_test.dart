@@ -34,11 +34,16 @@ class SlowInstaller extends GameInstaller {
 }
 
 class TrackedInstaller extends GameInstaller {
+  Map<String, String>? sdkEnvironment;
   void Function()? finished;
   @override
   Future<void> launch(int id, Map<String, dynamic> manifest,
-      {void Function()? onExit}) async {
+      {void Function()? onExit,
+      Map<String, String>? environment,
+      void Function(int)? onStarted}) async {
     finished = onExit;
+    sdkEnvironment = environment;
+    onStarted?.call(12345);
   }
 }
 
@@ -74,6 +79,9 @@ void main() {
     final downloads = DownloadsController(api, factory: () => installer);
     await downloads.launch(game);
     expect(downloads.activeGameId, 1);
+    expect(installer.sdkEnvironment!['KEEPPIXEL_GAME_ID'], '1');
+    expect(installer.sdkEnvironment!['KEEPPIXEL_SDK_TOKEN']!.length, 43);
+    expect(installer.sdkEnvironment!.values.join(), isNot(contains('session')));
     await expectLater(downloads.uninstall(game), throwsA(isA<ApiError>()));
     await expectLater(downloads.launch(game), throwsA(isA<ApiError>()));
     installer.finished!();

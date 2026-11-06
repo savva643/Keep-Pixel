@@ -8,7 +8,9 @@ class GameInstaller {
           void Function(double) progress) async =>
       throw UnsupportedError('Установка игр доступна в клиенте Windows');
   Future<void> launch(int id, Map<String, dynamic> manifest,
-          {void Function()? onExit}) async =>
+          {void Function()? onExit,
+          Map<String, String>? environment,
+          void Function(int)? onStarted}) async =>
       throw UnsupportedError('Установка игр доступна в клиенте Windows');
   void cancel() {}
 }

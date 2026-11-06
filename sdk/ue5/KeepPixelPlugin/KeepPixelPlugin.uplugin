@@ -1,0 +1,14 @@
+{
+  "FileVersion": 3,
+  "Version": 2,
+  "VersionName": "0.2.0",
+  "FriendlyName": "Keep Pixel SDK",
+  "Description": "Game-scoped Keep Pixel launcher API: profile, friends, license, presence and game panel.",
+  "Category": "Online Platform",
+  "CreatedBy": "Necsoura",
+  "CreatedByURL": "https://necsoura.ru",
+  "CanContainContent": false,
+  "IsBetaVersion": true,
+  "Modules": [{ "Name": "KeepPixelPlugin", "Type": "Runtime", "LoadingPhase": "Default" }],
+  "SupportedTargetPlatforms": ["Win64", "Linux", "Mac"]
+}
