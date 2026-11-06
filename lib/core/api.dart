@@ -328,6 +328,13 @@ class PixelApi extends ChangeNotifier {
         authenticated: true);
   }
 
+  Future<bool> checkLicense(int gameId) async =>
+      (await _call(apiUrl, 'license/check',
+          method: 'POST',
+          body: {'game_id': gameId},
+          authenticated: true) as Map)['success'] ==
+      true;
+
   Future<void> presence({String status = 'online', int? gameId}) async =>
       _call(apiUrl, 'me/presence',
           method: 'POST',

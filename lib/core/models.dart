@@ -86,6 +86,8 @@ class PixelProfile {
 }
 
 class PixelFriend {
+  final int? gameId;
+  final String gameTitle;
   final String id,
       relationId,
       name,
@@ -96,6 +98,8 @@ class PixelFriend {
       relationship;
   const PixelFriend(
       {required this.id,
+      this.gameId,
+      this.gameTitle = '',
       this.relationId = '',
       this.name = 'Игрок',
       this.username = '',
@@ -105,6 +109,8 @@ class PixelFriend {
       this.relationship = 'none'});
   factory PixelFriend.fromJson(Map<String, dynamic> j) => PixelFriend(
         id: '${j['global_id'] ?? j['friend_id'] ?? ''}',
+        gameId: int.tryParse('${j['game_id'] ?? ''}'),
+        gameTitle: '${j['game_title'] ?? ''}',
         relationId: '${j['relation_id'] ?? j['id'] ?? ''}',
         name: '${j['name'] ?? 'Игрок'}',
         username: '${j['username'] ?? ''}',
@@ -115,7 +121,7 @@ class PixelFriend {
       );
   String get statusLabel => switch (status) {
         'online' => 'В сети',
-        'in_game' => 'В игре',
+        'in_game' => gameTitle.isEmpty ? 'В игре' : 'Играет в $gameTitle',
         'away' => 'Отошёл',
         'offline' => 'Не в сети',
         _ => 'Статус недоступен'

@@ -154,7 +154,9 @@ class GameInstaller {
   }
 
   Future<void> launch(int id, Map<String, dynamic> manifest,
-      {void Function()? onExit}) async {
+      {void Function()? onExit,
+      Map<String, String>? environment,
+      void Function(int)? onStarted}) async {
     if (!supported) throw UnsupportedError('Запуск доступен в клиенте Windows');
     if (!await installed(id, '${manifest['version']}')) {
       throw const FormatException('Сначала установите актуальную версию игры');
@@ -176,8 +178,9 @@ class GameInstaller {
             await exe.resolveSymbolicLinks())) {
       throw const FormatException('Исполняемый файл игры не найден');
     }
-    final process =
-        await Process.start(exe.path, const [], workingDirectory: root.path);
+    final process = await Process.start(exe.path, const [],
+        workingDirectory: root.path, environment: environment);
+    onStarted?.call(process.pid);
     unawaited(process.stdout.drain<void>());
     unawaited(process.stderr.drain<void>());
     unawaited(process.exitCode.then((_) {
