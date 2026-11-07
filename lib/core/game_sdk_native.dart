@@ -5,13 +5,14 @@ import 'dart:math';
 import 'package:flutter/services.dart';
 import 'api.dart';
 import 'game_overlay.dart';
+import 'models.dart';
 
 class _GameSession {
   final int id, generation;
-  final String title, secret;
+  final String gameId, title, secret;
   int active = 0, requests = 0;
   DateTime window = DateTime.now();
-  _GameSession(this.id, this.title, this.secret, this.generation);
+  _GameSession(this.id, this.gameId, this.title, this.secret, this.generation);
 }
 
 /// Engine-neutral v1 API. Account tokens never cross this loopback boundary.
@@ -30,7 +31,8 @@ class GameSdkHost {
         (_, s) => !api.signedIn || s.generation != api.sessionGeneration);
   }
 
-  Future<Map<String, String>> create(int id, String title) async {
+  Future<Map<String, String>> create(String gameId, String title) async {
+    final id = gameKey(gameId);
     if (_disposed || !api.signedIn || id < 1) {
       throw const ApiError('Войдите перед запуском игры', status: 401);
     }
@@ -56,7 +58,7 @@ class GameSdkHost {
     final secret = base64Url
         .encode(List<int>.generate(32, (_) => random.nextInt(256)))
         .replaceAll('=', '');
-    _sessions[id] = _GameSession(id, title, secret, generation);
+    _sessions[id] = _GameSession(id, gameId, title, secret, generation);
     return {
       'KEEPPIXEL_SDK_URL': 'http://127.0.0.1:${server.port}/v1',
       'KEEPPIXEL_SDK_TOKEN': secret,
@@ -171,14 +173,14 @@ class GameSdkHost {
                     'name': f.name,
                     'avatar': f.avatar,
                     'presence': f.status,
-                    'game_id': f.gameId ?? 0,
+                    'game_id': f.gameId == null ? 0 : gameKey(f.gameId!),
                     'game_title': f.gameTitle
                   })
               .toList();
         case 'GET /v1/license':
           data = {
             'game_id': session.id,
-            'owned': await api.checkLicense(session.id)
+            'owned': await api.checkLicense(session.gameId)
           };
         case 'POST /v1/presence':
           if (body.keys.any((k) => k != 'status') ||
@@ -187,7 +189,7 @@ class GameSdkHost {
                 'Use status in_game or away; game ID is bound to the session');
           }
           await api.presence(
-              status: body['status'] as String, gameId: session.id);
+              status: body['status'] as String, gameId: session.gameId);
           data = {'game_id': session.id, 'status': body['status']};
         case 'POST /v1/overlay':
           if (body.length != 1 || body['visible'] is! bool) {
@@ -257,7 +259,7 @@ class GameSdkHost {
     }
   }
 
-  void revoke(int id) => _sessions.remove(id);
+  void revoke(String gameId) => _sessions.remove(gameKey(gameId));
   void dispose() {
     _disposed = true;
     api.removeListener(_sessionChanged);

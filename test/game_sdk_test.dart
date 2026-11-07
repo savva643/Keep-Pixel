@@ -69,7 +69,7 @@ void main() {
     await api.initialize();
     overlay = GameOverlayController();
     host = GameSdkHost(api, overlay);
-    env = await host.create(7, 'Game');
+    env = await host.create('7', 'Game');
   });
   tearDown(() {
     host.dispose();
@@ -139,7 +139,7 @@ void main() {
       'license and presence are bound to the launched game, and malformed bodies fail closed',
       () async {
     expect((await request('/license')).$2['data']['owned'], true);
-    expect(jsonDecode(calls.last.body)['game_id'], 7);
+    expect(jsonDecode(calls.last.body)['game_id'], '7');
     expect(
         (await request('/presence',
                 method: 'POST', body: {'status': 'in_game', 'game_id': 99}))
@@ -151,7 +151,7 @@ void main() {
                 method: 'POST', body: {'status': 'in_game'}))
             .$1,
         200);
-    expect(jsonDecode(calls.last.body)['game_id'], 7);
+    expect(jsonDecode(calls.last.body)['game_id'], '7');
     expect(
         (await request('/overlay', method: 'POST', body: {'visible': true})).$1,
         501);
@@ -159,11 +159,11 @@ void main() {
   test('game exit, replacement session and logout revoke local capabilities',
       () async {
     final old = env['KEEPPIXEL_SDK_TOKEN']!;
-    env = await host.create(7, 'Game again');
+    env = await host.create('7', 'Game again');
     expect((await request('/session', token: old)).$1, 401);
-    host.revoke(7);
+    host.revoke('7');
     expect((await request('/profile')).$1, 401);
-    env = await host.create(7, 'Game');
+    env = await host.create('7', 'Game');
     await api.logout();
     expect((await request('/profile')).$1, 401);
   });

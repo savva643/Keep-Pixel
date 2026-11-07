@@ -1,5 +1,17 @@
+/// Number for the native overlay and the game SDK, whose protocol uses numeric
+/// ids. Numeric catalog ids stay as they are; UUIDs get a stable hash.
+int gameKey(String id) {
+  final numeric = int.tryParse(id);
+  if (numeric != null) return numeric;
+  var hash = 0x811c9dc5;
+  for (final unit in id.codeUnits) {
+    hash = ((hash ^ unit) * 0x01000193) & 0x7fffffff;
+  }
+  return hash == 0 ? 1 : hash;
+}
+
 class Game {
-  final int id;
+  final String id;
   final String title, description, genre, version, cover, banner, company;
   final double price;
   final List<String> platforms;
@@ -22,7 +34,7 @@ class Game {
       this.details = const {}});
   factory Game.fromJson(Map<String, dynamic> j) => Game(
         details: j,
-        id: int.parse('${j['id']}'),
+        id: '${j['id']}',
         title: '${j['title'] ?? j['game'] ?? ''}',
         description: '${j['description'] ?? j['opica'] ?? ''}',
         genre: '${j['genre'] ?? ''}',
@@ -85,8 +97,13 @@ class PixelProfile {
   bool get customized => overrides.isNotEmpty;
 }
 
+String? _gameId(dynamic value) {
+  final id = '${value ?? ''}';
+  return id.isEmpty || id == '0' ? null : id;
+}
+
 class PixelFriend {
-  final int? gameId;
+  final String? gameId;
   final String gameTitle;
   final String id,
       relationId,
@@ -109,7 +126,7 @@ class PixelFriend {
       this.relationship = 'none'});
   factory PixelFriend.fromJson(Map<String, dynamic> j) => PixelFriend(
         id: '${j['global_id'] ?? j['friend_id'] ?? ''}',
-        gameId: int.tryParse('${j['game_id'] ?? ''}'),
+        gameId: _gameId(j['game_id']),
         gameTitle: '${j['game_title'] ?? ''}',
         relationId: '${j['relation_id'] ?? j['id'] ?? ''}',
         name: '${j['name'] ?? 'Игрок'}',

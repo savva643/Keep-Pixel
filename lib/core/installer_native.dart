@@ -8,46 +8,313 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:flutter/foundation.dart';
 import 'package:keep_pixel/core/package_rules.dart';
+import 'package:keep_pixel/core/storage.dart';
+
+export 'storage.dart';
+
+// Game ids become folder names: digits or a UUID, never a path.
+final _safeId = RegExp(r'^[A-Za-z0-9-]{1,64}$');
+const _configName = 'libraries.json';
+const _libraryName = 'KeepPixelLibrary';
+const _libraryMarker = '.keep-pixel-library';
 
 class GameInstaller {
   CancelToken? _cancel;
   bool get supported => Platform.isWindows;
-  Future<Directory> _root() async => Directory(
-      p.join((await getApplicationSupportDirectory()).path, 'games-v2'));
-  Future<Directory> _game(int id) async {
-    if (id < 1) throw const FormatException('Некорректный ID игры');
-    return Directory(p.join((await _root()).path, '$id'));
+  Future<String> _support() async =>
+      (await getApplicationSupportDirectory()).path;
+  Future<String> _builtIn() async => p.join(await _support(), 'games-v2');
+
+  /// Library folders, the default one first, and which one is the default.
+  Future<({List<String> folders, String main})> _config() async {
+    final builtIn = await _builtIn();
+    var main = builtIn;
+    final folders = <String>[builtIn];
+    try {
+      final j = jsonDecode(
+              await File(p.join(await _support(), _configName)).readAsString())
+          as Map;
+      for (final f in j['folders'] as List? ?? const []) {
+        if (f is String &&
+            p.isAbsolute(f) &&
+            !folders.any((x) => p.equals(x, f))) {
+          folders.add(f);
+        }
+      }
+      final chosen = j['default'];
+      if (chosen is String && folders.any((x) => p.equals(x, chosen))) {
+        main = folders.firstWhere((x) => p.equals(x, chosen));
+      }
+    } catch (_) {}
+    folders
+      ..remove(main)
+      ..insert(0, main);
+    return (folders: folders, main: main);
   }
 
-  Future<Map<int, String>> installedGames() async {
-    if (!supported) return {};
-    final root = await _root();
-    if (!await root.exists()) return {};
-    final found = <int, String>{};
-    await for (final entry in root.list(followLinks: false)) {
-      if (entry is! Directory ||
-          !RegExp(r'^[1-9]\d*$').hasMatch(p.basename(entry.path))) {
-        continue;
-      }
-      final receipt = File(p.join(entry.path, '.keep-pixel.json'));
+  Future<void> _writeConfig(List<String> folders, String main) async {
+    final builtIn = await _builtIn();
+    await File(p.join(await _support(), _configName)).writeAsString(jsonEncode({
+      'folders': [
+        for (final f in folders)
+          if (!p.equals(f, builtIn)) f
+      ],
+      'default': main
+    }));
+  }
+
+  /// Installed games: id, version and folder. A game found in two libraries
+  /// counts where the default library order finds it first.
+  Future<Map<String, ({String version, String dir})>> _scan(
+      [String? only]) async {
+    final found = <String, ({String version, String dir})>{};
+    for (final root in only == null ? (await _config()).folders : [only]) {
+      final dir = Directory(root);
+      if (!await dir.exists()) continue;
       try {
-        if (await receipt.length() > 4096) continue;
-        final j = jsonDecode(await receipt.readAsString()) as Map;
-        if (j['version'] is String) {
-          found[int.parse(p.basename(entry.path))] = j['version'] as String;
+        await for (final entry in dir.list(followLinks: false)) {
+          final id = p.basename(entry.path);
+          if (entry is! Directory ||
+              !_safeId.hasMatch(id) ||
+              found.containsKey(id)) {
+            continue;
+          }
+          final version = await _receiptVersion(entry.path);
+          if (version != null) found[id] = (version: version, dir: entry.path);
         }
-      } catch (_) {}
+      } on FileSystemException {
+        // A drive that went away keeps its place in the list.
+      }
     }
     return found;
   }
 
-  Future<void> uninstall(int id) async {
+  Future<String?> _receiptVersion(String dir) async {
+    final receipt = File(p.join(dir, '.keep-pixel.json'));
+    try {
+      if (await receipt.length() > 4096) return null;
+      final j = jsonDecode(await receipt.readAsString()) as Map;
+      return j['version'] is String ? j['version'] as String : null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<String?> _locate(String id) async {
+    if (!_safeId.hasMatch(id)) throw StateError('Некорректный ID игры');
+    if (!supported) return null;
+    return (await _scan())[id]?.dir;
+  }
+
+  Future<Map<String, String>> installedGames() async {
+    if (!supported) return {};
+    return {for (final e in (await _scan()).entries) e.key: e.value.version};
+  }
+
+  /// Folder of every installed game.
+  Future<Map<String, String>> installedLocations() async {
+    if (!supported) return {};
+    return {for (final e in (await _scan()).entries) e.key: e.value.dir};
+  }
+
+  Future<List<Drive>> drives() async {
+    try {
+      final r = await Process.run(
+              'powershell',
+              [
+                '-NoProfile',
+                '-NonInteractive',
+                '-Command',
+                r'[Console]::OutputEncoding = [Text.Encoding]::UTF8; '
+                    r'Get-CimInstance Win32_LogicalDisk | '
+                    r'Where-Object { $_.DriveType -in 2,3 } | '
+                    r'Select-Object DeviceID,VolumeName,FreeSpace,Size | '
+                    r'ConvertTo-Json -Compress'
+              ],
+              stdoutEncoding: utf8)
+          .timeout(const Duration(seconds: 10));
+      var j = jsonDecode('${r.stdout}'.trim());
+      if (j is Map) j = [j];
+      return [
+        for (final d in j as List)
+          if (RegExp(r'^[A-Z]:$').hasMatch('${d['DeviceID']}'))
+            Drive(
+                root: '${d['DeviceID']}\\',
+                label: '${d['VolumeName'] ?? ''}',
+                free: (d['FreeSpace'] as num?)?.toInt(),
+                total: (d['Size'] as num?)?.toInt())
+      ];
+    } catch (_) {
+      return [
+        for (final letter in 'CDEFGHIJKLMNOPQRSTUVWXYZ'.split(''))
+          if (Directory('$letter:\\').existsSync()) Drive(root: '$letter:\\')
+      ];
+    }
+  }
+
+  Future<List<LibraryFolder>> libraries() async {
+    final config = await _config(), builtIn = await _builtIn();
+    final drives = await this.drives();
+    final result = <LibraryFolder>[];
+    for (final folder in config.folders) {
+      final games = await _scan(folder);
+      var bytes = 0;
+      for (final game in games.values) {
+        bytes += await _size(game.dir);
+      }
+      final drive = drives
+          .where(
+              (d) => d.root.toUpperCase() == p.rootPrefix(folder).toUpperCase())
+          .firstOrNull;
+      result.add(LibraryFolder(
+          path: folder,
+          isDefault: p.equals(folder, config.main),
+          builtIn: p.equals(folder, builtIn),
+          games: games.length,
+          bytes: bytes,
+          free: drive?.free,
+          total: drive?.total));
+    }
+    return result;
+  }
+
+  /// Makes a library in the chosen place: a drive or folder gets its own
+  /// KeepPixelLibrary folder, so games never mix with the player's files.
+  Future<String> addLibrary(String chosen) async {
+    if (!p.isAbsolute(chosen)) {
+      throw const FormatException('Нужен полный путь к папке');
+    }
+    final dir = p.basename(chosen) == _libraryName
+        ? p.normalize(chosen)
+        : p.join(chosen, _libraryName);
+    final config = await _config();
+    if (config.folders.any((f) => p.equals(f, dir))) return dir;
+    try {
+      await Directory(dir).create(recursive: true);
+      await File(p.join(dir, _libraryMarker)).writeAsString('{}');
+    } on FileSystemException catch (e) {
+      throw FormatException(
+          'Не удалось создать папку: ${e.osError?.message ?? e.message}');
+    }
+    await _writeConfig([...config.folders, dir], config.main);
+    return dir;
+  }
+
+  /// Takes a folder off the list. Its files stay on the drive.
+  Future<void> removeLibrary(String path) async {
+    final config = await _config(), builtIn = await _builtIn();
+    if (p.equals(path, builtIn)) {
+      throw const FormatException('Основную папку убрать нельзя');
+    }
+    if ((await _scan(path)).isNotEmpty) {
+      throw const FormatException(
+          'В папке есть игры. Сначала перенеси или удали их');
+    }
+    await _writeConfig([
+      for (final f in config.folders)
+        if (!p.equals(f, path)) f
+    ], p.equals(config.main, path) ? builtIn : config.main);
+  }
+
+  Future<void> setDefaultLibrary(String path) async {
+    final config = await _config();
+    if (!config.folders.any((f) => p.equals(f, path))) {
+      throw const FormatException('Такой папки нет в списке');
+    }
+    await _writeConfig(config.folders, path);
+  }
+
+  Future<int> _size(String dir) async {
+    var total = 0;
+    try {
+      await for (final entry
+          in Directory(dir).list(recursive: true, followLinks: false)) {
+        if (entry is File) total += await entry.length();
+      }
+    } on FileSystemException {
+      // Counted as far as readable.
+    }
+    return total;
+  }
+
+  Future<int> gameSize(String id) async {
+    final dir = await _locate(id);
+    return dir == null ? 0 : _size(dir);
+  }
+
+  /// Opens a library or game folder, or the default library, in Explorer.
+  Future<void> openFolder([String? path]) async {
+    final config = await _config();
+    final known = path == null ||
+        config.folders.any((f) => p.equals(f, path)) ||
+        (await _scan()).values.any((g) => p.equals(g.dir, path));
+    if (!known) throw const FormatException('Неизвестная папка');
+    final dir = Directory(path ?? config.main);
+    await dir.create(recursive: true);
+    await Process.start('explorer', [dir.path]);
+  }
+
+  /// Moves an installed game to another library, the way Steam does.
+  Future<void> moveGame(
+      String id, String library, void Function(double) progress) async {
+    final source = await _locate(id);
+    if (source == null) throw const FormatException('Игра не установлена');
+    final config = await _config();
+    if (!config.folders.any((f) => p.equals(f, library))) {
+      throw const FormatException('Такой папки нет в списке');
+    }
+    if (p.equals(p.dirname(source), library)) return;
+    final target = Directory(p.join(library, id));
+    if (await target.exists()) {
+      throw const FormatException('В выбранной папке уже есть эта игра');
+    }
+    await Directory(library).create(recursive: true);
+    try {
+      await Directory(source).rename(target.path);
+      progress(1);
+      return;
+    } on FileSystemException {
+      // Another drive: copy, then remove the old files.
+    }
+    final temp = Directory(p.join(library, '.moving-$id'));
+    if (await temp.exists()) await temp.delete(recursive: true);
+    try {
+      final files = <File>[];
+      await for (final entry
+          in Directory(source).list(recursive: true, followLinks: false)) {
+        if (entry is Link) {
+          throw const FormatException('В папке игры есть ссылки');
+        }
+        if (entry is File) files.add(entry);
+      }
+      var total = 0, done = 0;
+      for (final f in files) {
+        total += await f.length();
+      }
+      for (final f in files) {
+        final out = File(p.join(temp.path, p.relative(f.path, from: source)));
+        await out.parent.create(recursive: true);
+        await f.copy(out.path);
+        done += await f.length();
+        progress(total == 0 ? .95 : done / total * .95);
+      }
+      await temp.rename(target.path);
+    } catch (_) {
+      if (await temp.exists()) await temp.delete(recursive: true);
+      rethrow;
+    }
+    await Directory(source).delete(recursive: true);
+    progress(1);
+  }
+
+  Future<void> uninstall(String id) async {
     if (!supported) {
       throw UnsupportedError('Управление установками доступно в Windows');
     }
-    final root = await _root(), game = await _game(id);
-    if (!await game.exists()) return;
-    if (!p.isWithin(await root.resolveSymbolicLinks(),
+    final dir = await _locate(id);
+    if (dir == null) return;
+    final game = Directory(dir);
+    if (!p.isWithin(await Directory(p.dirname(dir)).resolveSymbolicLinks(),
             await game.resolveSymbolicLinks()) ||
         await FileSystemEntity.isLink(game.path)) {
       throw const FormatException('Небезопасная папка установки');
@@ -55,19 +322,15 @@ class GameInstaller {
     await game.delete(recursive: true);
   }
 
-  Future<bool> installed(int id, String version) async {
+  Future<bool> installed(String id, String version) async {
     if (!supported) return false;
-    final file = File(p.join((await _game(id)).path, '.keep-pixel.json'));
-    try {
-      return (jsonDecode(await file.readAsString()) as Map)['version'] ==
-          version;
-    } catch (_) {
-      return false;
-    }
+    final dir = await _locate(id);
+    return dir != null && await _receiptVersion(dir) == version;
   }
 
-  Future<void> install(int id, Map<String, dynamic> manifest,
-      void Function(double) progress) async {
+  Future<void> install(
+      String id, Map<String, dynamic> manifest, void Function(double) progress,
+      {String? library}) async {
     if (!supported) {
       throw UnsupportedError('Установка доступна в клиенте Windows');
     }
@@ -81,7 +344,14 @@ class GameInstaller {
         !RegExp(r'^[a-f0-9]{64}$').hasMatch(hash)) {
       throw const FormatException('Некорректный манифест игры');
     }
-    final root = await _root();
+    // An installed game updates where it is; a new one goes where chosen.
+    final existing = await _locate(id);
+    final config = await _config();
+    final root = Directory(existing != null
+        ? p.dirname(existing)
+        : library != null && config.folders.any((f) => p.equals(f, library))
+            ? library
+            : config.main);
     await root.create(recursive: true);
     final stage = await Directory(p.join(root.path, '.staging-')).createTemp();
     final archiveFile = File(p.join(stage.path, 'package.zip'));
@@ -136,7 +406,11 @@ class GameInstaller {
       if (cancel.isCancelled) throw cancel.cancelError!;
       await File(p.join(payload.path, '.keep-pixel.json')).writeAsString(
           jsonEncode({'version': manifest['version'], 'sha256': hash}));
-      final target = await _game(id);
+      final target = Directory(p.join(root.path, id));
+      if (await target.exists() && await _receiptVersion(target.path) == null) {
+        throw const FormatException(
+            'Папка игры занята чужими файлами. Выбери другую папку');
+      }
       final backup = Directory(p.join(stage.path, 'previous'));
       if (await target.exists()) await target.rename(backup.path);
       try {
@@ -153,7 +427,7 @@ class GameInstaller {
     }
   }
 
-  Future<void> launch(int id, Map<String, dynamic> manifest,
+  Future<void> launch(String id, Map<String, dynamic> manifest,
       {void Function()? onExit,
       Map<String, String>? environment,
       void Function(int)? onStarted}) async {
@@ -161,7 +435,7 @@ class GameInstaller {
     if (!await installed(id, '${manifest['version']}')) {
       throw const FormatException('Сначала установите актуальную версию игры');
     }
-    final root = await _game(id);
+    final root = Directory((await _locate(id))!);
     final receipt = jsonDecode(
             await File(p.join(root.path, '.keep-pixel.json')).readAsString())
         as Map;

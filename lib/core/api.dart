@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math';
 import 'package:flutter/foundation.dart';
+import 'auth/necsoura_password.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:http/http.dart' as http;
 import 'models.dart';
@@ -16,17 +18,37 @@ class ApiError implements Exception {
   String toString() => message;
 }
 
+/// A second window's link to the window that owns the session: tokens are
+/// stored and refreshed in one place, otherwise the windows would invalidate
+/// each other's refresh tokens.
+class SessionOwner {
+  final Future<String?> Function() renew;
+  final Future<void> Function(Map<String, dynamic> session) apply;
+  final Future<void> Function() logout;
+  final Future<void> Function() profileChanged;
+  const SessionOwner(
+      {required this.renew,
+      required this.apply,
+      required this.logout,
+      required this.profileChanged});
+}
+
 class PixelApi extends ChangeNotifier {
   static const defaultApi = String.fromEnvironment('KEEP_PIXEL_API_URL',
-      defaultValue: 'http://85.112.56.145:4002');
+      defaultValue: 'https://keeppixel.necsoura.ru');
   static const defaultAuth = String.fromEnvironment('NECSOURA_AUTH_URL',
-      defaultValue: 'http://85.112.56.145:3001/api/auth');
+      defaultValue: 'https://necsoura.ru/api/auth');
+  static const defaultProfile = String.fromEnvironment('NECSOURA_PROFILE_URL',
+      defaultValue: 'https://kompot.necsoura.ru/api');
   String apiUrl, authUrl;
+  int profileRevision = 0;
+  String _device = '';
   int sessionGeneration = 0;
   bool _usesDefaults = false;
   bool get persistentSession => canPersistSession;
   final http.Client client;
   final FlutterSecureStorage storage;
+  final SessionOwner? owner;
   String? _token, _refresh, _pending2fa;
   Future<void>? _refreshing;
   bool ready = false;
@@ -35,23 +57,76 @@ class PixelApi extends ChangeNotifier {
       {this.apiUrl = defaultApi,
       this.authUrl = defaultAuth,
       http.Client? client,
-      this.storage = const FlutterSecureStorage()})
+      this.storage = const FlutterSecureStorage(),
+      this.owner})
       : client = client ?? http.Client() {
     _usesDefaults = apiUrl == defaultApi && authUrl == defaultAuth;
   }
   String get accountSite {
-    final u = Uri.parse(apiUrl);
+    final u = Uri.parse(authUrl);
     return Uri(
             scheme: u.scheme,
             host: u.host,
-            port: u.port == 4002 ? null : (u.hasPort ? u.port : null))
+            port: u.port == 3001 ? null : (u.hasPort ? u.port : null))
         .origin;
   }
 
   bool get signedIn => _token != null;
+  String? get sessionToken => _token;
+
+  /// How this client introduces itself; the account's session list shows it.
+  Map<String, String> get deviceHeaders {
+    final platform = kIsWeb ? 'web' : defaultTargetPlatform.name;
+    return {
+      'x-app-service': 'keeppixel',
+      'platform': platform,
+      'device-name': 'Keep Pixel · $platform',
+      'device-type': kIsWeb
+          ? 'web'
+          : const {TargetPlatform.android, TargetPlatform.iOS}
+                  .contains(defaultTargetPlatform)
+              ? 'mobile'
+              : 'desktop',
+      if (_device.isNotEmpty) 'device-fingerprint': _device,
+    };
+  }
+
+  void profileChanged() {
+    profileRevision++;
+    notifyListeners();
+    owner?.profileChanged();
+  }
+
+  /// In a second window: takes over what the owner of the session reports.
+  void adoptSession(
+      {required String? token,
+      required String apiUrl,
+      required String authUrl,
+      required String device}) {
+    if ((token == null) != (_token == null) ||
+        apiUrl != this.apiUrl ||
+        authUrl != this.authUrl) {
+      sessionGeneration++;
+    }
+    _token = token;
+    this.apiUrl = apiUrl;
+    this.authUrl = authUrl;
+    _device = device;
+    ready = true;
+    notifyListeners();
+  }
+
   Future<void> initialize() async {
     try {
       final prefs = await SharedPreferences.getInstance();
+      _device = prefs.getString('keep_pixel_device') ?? '';
+      if (_device.isEmpty) {
+        final random = Random.secure();
+        _device = List.generate(16,
+                (_) => random.nextInt(256).toRadixString(16).padLeft(2, '0'))
+            .join();
+        await prefs.setString('keep_pixel_device', _device);
+      }
       if (_usesDefaults) {
         apiUrl = prefs.getString('keep_pixel_api_url') ?? apiUrl;
         authUrl = prefs.getString('keep_pixel_auth_url') ?? authUrl;
@@ -89,8 +164,7 @@ class PixelApi extends ChangeNotifier {
     request.headers.addAll({
       'Content-Type': 'application/json',
       'Accept': 'application/json',
-      'x-app-service': 'keeppixel',
-      'platform': kIsWeb ? 'web' : defaultTargetPlatform.name
+      ...deviceHeaders
     });
     if (authenticated) request.headers['Authorization'] = 'Bearer $_token';
     if (body != null) request.body = jsonEncode(body);
@@ -120,7 +194,7 @@ class PixelApi extends ChangeNotifier {
     if (response.statusCode == 401 &&
         authenticated &&
         retry &&
-        _refresh != null) {
+        (_refresh != null || owner != null)) {
       await (_refreshing ??= _renew().whenComplete(() => _refreshing = null));
       return _call(base, path,
           method: method, body: body, authenticated: true, retry: false);
@@ -147,6 +221,12 @@ class PixelApi extends ChangeNotifier {
     if (j['token'] is! String || (j['token'] as String).isEmpty) {
       throw const ApiError('Сервер не выдал сеанс');
     }
+    if (owner != null) {
+      await owner!.apply(j);
+      _token = j['token'] as String;
+      notifyListeners();
+      return;
+    }
     final token = j['token'] as String,
         refresh = j['refreshToken'] as String? ?? _refresh;
     if (canPersistSession) {
@@ -167,7 +247,27 @@ class PixelApi extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> applySession(Map<String, dynamic> payload) => _save(payload);
+  Future<bool> refreshSession() async {
+    if (_refresh == null && owner == null) return false;
+    try {
+      await (_refreshing ??= _renew().whenComplete(() => _refreshing = null));
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
   Future<void> _renew() async {
+    if (owner != null) {
+      final token = await owner!.renew();
+      if (token == null) {
+        await _clear();
+        throw const ApiError('Войдите в Necsoura', status: 401);
+      }
+      _token = token;
+      return;
+    }
     try {
       await _save(Map<String, dynamic>.from(await _call(authUrl, 'refresh',
           method: 'POST', body: {'refreshToken': _refresh})));
@@ -197,6 +297,22 @@ class PixelApi extends ChangeNotifier {
     return true;
   }
 
+  Future<void> register(String login, String email, String password) async {
+    final kdf = NecsouraPassword.newKdf();
+    final keys = await NecsouraPassword.derive(password, kdf);
+    await _save(Map<String, dynamic>.from(
+        await _call(authUrl, 'register', method: 'POST', body: {
+      'login': login.trim(),
+      'email': email.trim(),
+      'authKey': keys.authKeyBase64,
+      'kdf': kdf,
+      'gameNickname': login.trim()
+    })));
+  }
+
+  // After a social sign-in the shared screens hand over the pending 2FA token.
+  set pendingTwoFactor(String token) => _pending2fa = token;
+
   Future<void> confirm2fa(String code, {bool backup = false}) async {
     if (_pending2fa == null) throw const ApiError('Войдите заново');
     final result = await _call(
@@ -216,10 +332,17 @@ class PixelApi extends ChangeNotifier {
     _refresh = null;
     _pending2fa = null;
     notifyListeners();
-    if (canPersistSession) await storage.delete(key: 'keep_pixel_session_v2');
+    if (owner == null && canPersistSession) {
+      await storage.delete(key: 'keep_pixel_session_v2');
+    }
   }
 
   Future<void> logout() async {
+    if (owner != null) {
+      await owner!.logout();
+      await _clear();
+      return;
+    }
     if (_token != null) {
       try {
         await _call(authUrl, 'logout',
@@ -247,20 +370,54 @@ class PixelApi extends ChangeNotifier {
                   }).query}') as List)
           .map((j) => Game.fromJson(Map<String, dynamic>.from(j)))
           .toList();
-  Future<Game> game(int id) async => Game.fromJson(
+  Future<Game> game(String id) async => Game.fromJson(
       Map<String, dynamic>.from(await _call(apiUrl, 'games/$id')));
-  Future<Map<String, dynamic>> buildManifest(int id) async =>
+  Future<Map<String, dynamic>> buildManifest(String id) async =>
       Map<String, dynamic>.from(
           await _call(apiUrl, 'games/$id/download', authenticated: true));
   Future<List<Game>> library() async =>
       (await _call(apiUrl, 'library', authenticated: true) as List)
           .map((j) => Game.fromJson(Map<String, dynamic>.from(j)))
           .toList();
-  Future<void> claim(int id) async => _call(apiUrl, 'library/$id',
+  Future<void> claim(String id) async => _call(apiUrl, 'library/$id',
       method: 'POST', body: {}, authenticated: true);
   Future<PixelProfile> profile() async =>
       PixelProfile.fromJson(Map<String, dynamic>.from(
           await _call(apiUrl, 'me', authenticated: true)));
+  Future<PixelProfile> publicProfile(String id) async =>
+      PixelProfile.fromJson(Map<String, dynamic>.from(
+          await _call(apiUrl, 'people/$id', authenticated: true)));
+
+  /// Stores a picture for a Keep Pixel profile override in the shared uploads,
+  /// which does not touch the Kompot profile itself.
+  Future<String> uploadImage(Uint8List bytes, String filename) async {
+    Future<http.Response> send() async {
+      final request = http.MultipartRequest(
+          'POST', Uri.parse('$defaultProfile/files/upload'))
+        ..headers.addAll({...deviceHeaders, 'Authorization': 'Bearer $_token'})
+        ..fields['type'] = 'image'
+        ..files.add(
+            http.MultipartFile.fromBytes('file', bytes, filename: filename));
+      return http.Response.fromStream(await client.send(request));
+    }
+
+    var response = await send();
+    if (response.statusCode == 401 && await refreshSession()) {
+      response = await send();
+    }
+    final data = response.statusCode == 200
+        ? jsonDecode(utf8.decode(response.bodyBytes))
+        : null;
+    final record = data is Map ? data['fileRecord'] : null;
+    final name = record is Map
+        ? record['fileName'] ?? record['file_name'] ?? record['filename']
+        : null;
+    if (name is! String || name.isEmpty) {
+      throw const ApiError('Не удалось загрузить картинку');
+    }
+    return '${Uri.parse(apiUrl).origin}/uploads/$name';
+  }
+
   Future<PixelProfile> updateProfile(Map<String, dynamic> patch) async =>
       PixelProfile.fromJson(Map<String, dynamic>.from(await _call(apiUrl, 'me',
           method: 'PATCH', body: {'overrides': patch}, authenticated: true)));
@@ -328,14 +485,14 @@ class PixelApi extends ChangeNotifier {
         authenticated: true);
   }
 
-  Future<bool> checkLicense(int gameId) async =>
+  Future<bool> checkLicense(String gameId) async =>
       (await _call(apiUrl, 'license/check',
           method: 'POST',
           body: {'game_id': gameId},
           authenticated: true) as Map)['success'] ==
       true;
 
-  Future<void> presence({String status = 'online', int? gameId}) async =>
+  Future<void> presence({String status = 'online', String? gameId}) async =>
       _call(apiUrl, 'me/presence',
           method: 'POST',
           body: {'status': status, 'game_id': gameId},

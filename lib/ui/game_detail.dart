@@ -3,6 +3,7 @@ import '../core/api.dart';
 import '../core/downloads.dart';
 import '../core/models.dart';
 import 'auth_dialog.dart';
+import 'game_actions.dart';
 import 'shared.dart';
 
 Future<void> showGame(
@@ -137,6 +138,7 @@ class _GameDetailState extends State<GameDetail> {
         final installed = manager.isCurrent(game);
         return ListView(
             padding: const EdgeInsets.fromLTRB(24, 0, 24, 36),
+            // The embedded library pane keeps the same reading width as the sheet.
             children: [
               if (!widget.embedded)
                 Align(
@@ -145,15 +147,18 @@ class _GameDetailState extends State<GameDetail> {
                         tooltip: 'Закрыть',
                         onPressed: () => Navigator.pop(context),
                         icon: const Icon(Icons.close_rounded))),
+              if (widget.embedded) const SizedBox(height: 20),
               ClipRRect(
-                  borderRadius: BorderRadius.circular(24),
+                  borderRadius: Kp.r24,
                   child: SizedBox(
-                      height: 230,
+                      height: 260,
                       child: Artwork(game.banner, label: game.title))),
               const SizedBox(height: 24),
               Text(game.title,
                   style: const TextStyle(
-                      fontSize: 28, fontWeight: FontWeight.w700)),
+                      fontSize: 30,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: -.8)),
               const SizedBox(height: 16),
               Wrap(spacing: 10, runSpacing: 10, children: [
                 if (game.genre.isNotEmpty) Tag(game.genre),
@@ -183,22 +188,24 @@ class _GameDetailState extends State<GameDetail> {
                         icon: const Icon(Icons.close),
                         label: const Text('Отменить загрузку'))
                   else
-                    FilledButton.icon(
-                        onPressed: busy || manager.isRunning(game)
-                            ? null
-                            : installed
-                                ? launch
-                                : () => manager.enqueue(game),
-                        icon: Icon(installed
-                            ? Icons.play_arrow_rounded
-                            : Icons.download_rounded),
-                        label: Text(manager.isRunning(game)
+                    KpButton(
+                        manager.isRunning(game)
                             ? 'Запущено'
                             : installed
                                 ? 'Играть'
                                 : manager.hasInstall(game)
                                     ? 'Обновить'
-                                    : 'Установить')),
+                                    : 'Установить',
+                        onTap: busy || manager.isRunning(game)
+                            ? null
+                            : installed
+                                ? launch
+                                : () => GameActions(context,
+                                        api: widget.api,
+                                        downloads: manager,
+                                        game: game,
+                                        onChanged: widget.onChanged)
+                                    .install()),
                   if (manager.hasInstall(game) &&
                       job?.active != true &&
                       !manager.isRunning(game))
@@ -227,18 +234,15 @@ class _GameDetailState extends State<GameDetail> {
               else if (game.price == 0)
                 Align(
                     alignment: Alignment.centerLeft,
-                    child: FilledButton.icon(
-                        onPressed: busy ? null : claim,
-                        icon: const Icon(Icons.add_rounded),
-                        label: Text(
-                            busy ? 'Добавление…' : 'Добавить в библиотеку')))
+                    child: KpButton(
+                        busy ? 'Добавление…' : 'Добавить в библиотеку',
+                        onTap: busy ? null : claim))
               else
                 const Text(
                     'Продажи пока не открыты. Покупка появится после подключения оплаты.',
                     style: TextStyle(color: muted, height: 1.6)),
               const SizedBox(height: 32),
-              const Text('Об игре',
-                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.w600)),
+              const KpHeading('Об игре'),
               const SizedBox(height: 16),
               SelectableText(
                   game.description.isEmpty
@@ -288,9 +292,7 @@ class _GameDetailState extends State<GameDetail> {
               if (game.details['updates'] is List &&
                   (game.details['updates'] as List).isNotEmpty) ...[
                 const SizedBox(height: 24),
-                const Text('Обновления',
-                    style:
-                        TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
+                const KpHeading('Обновления'),
                 for (final update in (game.details['updates'] as List).take(5))
                   Padding(
                       padding: const EdgeInsets.only(top: 12),

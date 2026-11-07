@@ -16,7 +16,9 @@ void showDownloads(BuildContext context, DownloadsController manager) =>
                     ListView(padding: const EdgeInsets.all(24), children: [
                       const Text('Загрузки',
                           style: TextStyle(
-                              fontSize: 24, fontWeight: FontWeight.w700)),
+                              fontSize: 26,
+                              fontWeight: FontWeight.w800,
+                              letterSpacing: -.5)),
                       const SizedBox(height: 8),
                       const Text(
                           'Установка продолжается при переходе между разделами.',
@@ -65,10 +67,8 @@ void showDownloads(BuildContext context, DownloadsController manager) =>
                                         if (j.error != null) ...[
                                           const SizedBox(height: 8),
                                           Text(j.error!,
-                                              style: TextStyle(
-                                                  color: Theme.of(context)
-                                                      .colorScheme
-                                                      .error)),
+                                              style: const TextStyle(
+                                                  color: Kp.error)),
                                           TextButton(
                                               onPressed: () =>
                                                   manager.enqueue(j.game),

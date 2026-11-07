@@ -18,10 +18,15 @@ class SlowInstaller extends GameInstaller {
   @override
   bool get supported => true;
   @override
-  Future<Map<int, String>> installedGames() async => {};
+  Future<Map<String, String>> installedGames() async => {};
+  @override
+  Future<Map<String, String>> installedLocations() async => {};
+  @override
+  Future<List<LibraryFolder>> libraries() async => const [];
   @override
   Future<void> install(
-      int id, Map<String, dynamic> manifest, void Function(double) progress) {
+      String id, Map<String, dynamic> manifest, void Function(double) progress,
+      {String? library}) {
     progress(.3);
     return done.future;
   }
@@ -37,7 +42,7 @@ class TrackedInstaller extends GameInstaller {
   Map<String, String>? sdkEnvironment;
   void Function()? finished;
   @override
-  Future<void> launch(int id, Map<String, dynamic> manifest,
+  Future<void> launch(String id, Map<String, dynamic> manifest,
       {void Function()? onExit,
       Map<String, String>? environment,
       void Function(int)? onStarted}) async {
@@ -75,10 +80,10 @@ void main() {
       () async {
     final api = await makeApi((_) async => json({'version': '1.0'}));
     final installer = TrackedInstaller(),
-        game = const Game(id: 1, title: 'Тест', version: '1.0');
+        game = const Game(id: '1', title: 'Тест', version: '1.0');
     final downloads = DownloadsController(api, factory: () => installer);
     await downloads.launch(game);
-    expect(downloads.activeGameId, 1);
+    expect(downloads.activeGameId, '1');
     expect(installer.sdkEnvironment!['KEEPPIXEL_GAME_ID'], '1');
     expect(installer.sdkEnvironment!['KEEPPIXEL_SDK_TOKEN']!.length, 43);
     expect(installer.sdkEnvironment!.values.join(), isNot(contains('session')));
@@ -177,7 +182,9 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('Библиотека'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Установить'));
+    await tester.tap(find.text('Проверочная игра').first);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('УСТАНОВИТЬ'));
     await tester.pumpAndSettle();
     expect(installer.cancelled, false);
     await tester.tap(find.text('Магазин').first);

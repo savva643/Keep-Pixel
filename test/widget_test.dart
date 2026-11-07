@@ -7,6 +7,8 @@ import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:keep_pixel/core/api.dart';
 import 'package:keep_pixel/main.dart';
+import 'dart:io';
+import 'package:keep_pixel/ui/settings.dart';
 
 const games = [
   {
@@ -72,6 +74,131 @@ void main() {
       api.dispose();
     });
   }
+  testWidgets('the website has a top menu and no library, like Steam',
+      (tester) async {
+    tester.view.physicalSize = const Size(1440, 1000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final api = await apiFor((r) => json(games));
+    await tester.pumpWidget(KeepPixelApp(api: api, web: true));
+    await tester.pumpAndSettle();
+    expect(find.text('Магазин'), findsOneWidget);
+    expect(find.text('Библиотека'), findsNothing);
+    expect(find.text('Загрузки'), findsNothing);
+    expect(find.text('Скачать клиент'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox());
+    api.dispose();
+  });
+  testWidgets('a phone uses the floating dock, not a bottom bar',
+      (tester) async {
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final api = await apiFor((r) => json(games));
+    await tester.pumpWidget(KeepPixelApp(api: api, navStyle: NavStyle.top));
+    await tester.pumpAndSettle();
+    expect(find.byType(NavigationBar), findsNothing);
+    expect(find.text('Библиотека'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox());
+    api.dispose();
+  });
+  testWidgets('catalog with one game shows it once and explains the rest',
+      (tester) async {
+    tester.view.physicalSize = const Size(1440, 1000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final api = await apiFor((r) => json([
+          {
+            'id': '4f516806-ae26-46e4-ba87-bba1ca2c59c9',
+            'title': 'Единственная игра',
+            'description': 'Описание',
+            'price': '0.00',
+            'metadata': {'release_status': 'development'}
+          }
+        ]));
+    await tester.pumpWidget(KeepPixelApp(api: api));
+    await tester.pumpAndSettle();
+    expect(find.text('Единственная игра'), findsOneWidget);
+    expect(find.text('Каталог только начинается'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox());
+    api.dispose();
+  });
+  test('the version in the settings matches pubspec.yaml', () {
+    final pubspec = File('pubspec.yaml').readAsStringSync();
+    expect(
+        RegExp(r'^version: ([\d.]+)', multiLine: true).firstMatch(pubspec)![1],
+        appVersion);
+  });
+  test('a second window borrows the session and never stores it', () async {
+    FlutterSecureStorage.setMockInitialValues({});
+    final calls = <String>[];
+    var tokens = 0;
+    final api = PixelApi(
+        client: MockClient((r) async =>
+            r.headers['Authorization'] == 'Bearer fresh'
+                ? json({'global_id': 'id', 'overrides': {}})
+                : json({'message': 'expired'}, 401)),
+        owner: SessionOwner(
+            renew: () async {
+              tokens++;
+              return 'fresh';
+            },
+            apply: (_) async => calls.add('apply'),
+            logout: () async => calls.add('logout'),
+            profileChanged: () async => calls.add('profile')));
+    api.adoptSession(
+        token: 'old',
+        apiUrl: 'https://api.example',
+        authUrl: 'https://auth.example',
+        device: 'abc');
+    final generation = api.sessionGeneration;
+    await api.profile();
+    expect(tokens, 1);
+    expect(api.sessionToken, 'fresh');
+    expect(api.sessionGeneration, generation);
+    expect(await const FlutterSecureStorage().readAll(), isEmpty);
+    await api.applySession({'token': 'next'});
+    api.profileChanged();
+    await api.logout();
+    expect(calls, ['apply', 'profile', 'logout']);
+    expect(api.signedIn, isFalse);
+  });
+  testWidgets('settings keep categories at the left and open the chosen one',
+      (tester) async {
+    tester.view.physicalSize = const Size(1000, 700);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final api = await apiFor((r) => json(games));
+    NavStyle? chosen;
+    await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+            body: SettingsView(
+                api: api,
+                installer: null,
+                navStyle: NavStyle.dock,
+                onNavStyle: (style) => chosen = style,
+                startPage: 0,
+                onSaveEndpoints: (_, __) async => '',
+                onSignIn: () {}))));
+    await tester.pumpAndSettle();
+    expect(find.text('Войди в аккаунт Necsoura'), findsOneWidget);
+    expect(find.byKey(const ValueKey('settings-games')), findsNothing);
+    await tester.tap(find.byKey(const ValueKey('settings-interface')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Верхнее меню'));
+    expect(chosen, NavStyle.top);
+    await tester.tap(find.byKey(const ValueKey('settings-connection')));
+    await tester.pumpAndSettle();
+    expect(find.text('Адрес API магазина'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox());
+    api.dispose();
+  });
   testWidgets('catalog failures show a real retry action', (tester) async {
     var calls = 0;
     final api = await apiFor((r) => ++calls == 1
@@ -122,26 +249,35 @@ void main() {
     }, signedIn: true);
     await tester.pumpWidget(KeepPixelApp(api: api));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Мой профиль'));
+    await tester.tap(find.text('Профиль'));
     await tester.pumpAndSettle();
     expect(find.text('Общее имя'), findsOneWidget);
     await tester.tap(find.text('Настроить профиль'));
     await tester.pumpAndSettle();
-    await tester.tap(find.byType(Switch).first);
+    await tester.tap(find.byType(Switch).at(2));
     await tester.pumpAndSettle();
     await tester.enterText(find.byType(TextFormField).first, 'Имя в магазине');
+    await tester.ensureVisible(find.text('Сохранить'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('Сохранить'));
     await tester.pumpAndSettle();
     expect(sent.single, {'display_name': 'Имя в магазине'});
+    await tester.tap(find.byTooltip('Назад'));
+    await tester.pumpAndSettle();
     expect(find.text('Имя в магазине'), findsOneWidget);
     await tester.tap(find.text('Настроить профиль'));
     await tester.pumpAndSettle();
     await tester.ensureVisible(find.text('Всё из основного профиля'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('Всё из основного профиля'));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('Сохранить'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Сохранить'));
     await tester.pumpAndSettle();
     expect(sent.last, {'display_name': null});
+    await tester.tap(find.byTooltip('Назад'));
+    await tester.pumpAndSettle();
     expect(find.text('Общее имя'), findsOneWidget);
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox());

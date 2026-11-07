@@ -9,6 +9,8 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+  flutter_localizations:
+    sdk: flutter
   shared_preferences: ^2.5.2
   web: ^1.1.1
   http: ^1.2.2
@@ -22,6 +24,18 @@ dependencies:
   path_provider: ^2.1.2
   dio: ^5.8.0+1
   archive: ^4.0.7
+  # Shared Necsoura account module (lib/necsoura), same versions as blast! and Kompot
+  cached_network_image: ^3.4.1
+  cryptography: ^2.7.0
+  easy_localization: ^3.0.5
+  file_picker: ^10.3.3
+  flutter_svg: ^2.0.10+1
+  flutter_web_auth_2: ^5.1.0
+  google_sign_in: ^7.2.0
+  mobile_scanner: ^6.0.7
+  qr_flutter: ^4.1.0
+  sign_in_with_apple: ^8.2.0
+  desktop_multi_window: ^0.3.1
 
 dev_dependencies:
   flutter_test:
@@ -35,7 +49,6 @@ flutter:
     - assets/translations/
     - assets/fonts/Montserrat_LICENSE.txt
     - assets/fonts/Unbounded_LICENSE.txt
-    - assets/fonts/Roboto_LICENSE.txt
     - assets/fonts/NotoSans_LICENSE.txt
   fonts:
     - family: Unbounded
@@ -45,9 +58,6 @@ flutter:
     - family: NotoSans
       fonts:
         - asset: assets/fonts/NotoSans-Regular.ttf
-    - family: Roboto
-      fonts:
-        - asset: assets/fonts/Roboto-Regular.ttf
     - family: Montserrat
       fonts:
         - asset: assets/fonts/Montserrat-Regular.ttf

@@ -1,14 +1,36 @@
 import 'package:bitsdojo_window/bitsdojo_window.dart';
+import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'core/api.dart';
+import 'core/downloads.dart';
 import 'core/installer.dart';
+import 'ui/settings.dart';
+import 'ui/settings_window.dart';
 import 'ui/shell.dart';
+import 'ui/style.dart';
 
-void main() {
+/// Translations for the shared Necsoura account screens.
+Widget withAccountStrings(Widget child) => EasyLocalization(
+    supportedLocales: const [Locale('ru')],
+    fallbackLocale: const Locale('ru'),
+    startLocale: const Locale('ru'),
+    useOnlyLangCode: true,
+    saveLocale: false,
+    path: 'assets/translations',
+    child: child);
+
+Future<void> main(List<String> args) async {
   WidgetsFlutterBinding.ensureInitialized();
+  await EasyLocalization.ensureInitialized();
+  final settingsWindow = SettingsWindow.fromArguments(args);
+  if (settingsWindow != null) {
+    runApp(withAccountStrings(settingsWindow));
+    return;
+  }
   final api = PixelApi();
-  runApp(KeepPixelApp(api: api));
+  runApp(withAccountStrings(KeepPixelApp(api: api)));
   api.initialize();
   if (!kIsWeb &&
       {TargetPlatform.windows, TargetPlatform.macOS, TargetPlatform.linux}
@@ -26,46 +48,33 @@ void main() {
 class KeepPixelApp extends StatelessWidget {
   final PixelApi api;
   final GameInstaller Function()? installerFactory;
-  const KeepPixelApp({super.key, required this.api, this.installerFactory});
+  final NavStyle? navStyle;
+  final bool web;
+  final void Function(DownloadsController)? onDownloads;
+  const KeepPixelApp(
+      {super.key,
+      required this.api,
+      this.installerFactory,
+      this.navStyle,
+      this.web = kIsWeb,
+      this.onDownloads});
   @override
-  Widget build(BuildContext context) => MaterialApp(
-        title: 'Keep Pixel',
-        debugShowCheckedModeBanner: false,
-        theme: ThemeData(
-          useMaterial3: true,
-          brightness: Brightness.dark,
-          fontFamily: 'Montserrat',
-          fontFamilyFallback: const ['NotoSans'],
-          scaffoldBackgroundColor: const Color(0xFF11161D),
-          colorScheme: ColorScheme.fromSeed(
-              seedColor: const Color(0xFF83B7FF),
-              brightness: Brightness.dark,
-              surface: const Color(0xFF19212B)),
-          cardTheme: CardThemeData(
-              elevation: 0,
-              margin: EdgeInsets.zero,
-              color: const Color(0xFF1C2632),
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(16))),
-          inputDecorationTheme: InputDecorationTheme(
-              filled: true,
-              fillColor: const Color(0xFF202B38),
-              border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(16),
-                  borderSide: BorderSide.none)),
-          filledButtonTheme: FilledButtonThemeData(
-              style: FilledButton.styleFrom(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(16)))),
-          outlinedButtonTheme: OutlinedButtonThemeData(
-              style: OutlinedButton.styleFrom(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(16)))),
-        ),
-        home: PixelShell(api: api, installerFactory: installerFactory),
-      );
+  Widget build(BuildContext context) {
+    final strings = EasyLocalization.of(context);
+    return MaterialApp(
+      title: 'Keep Pixel',
+      debugShowCheckedModeBanner: false,
+      theme: kpTheme(),
+      localizationsDelegates:
+          strings?.delegates ?? GlobalMaterialLocalizations.delegates,
+      supportedLocales: strings?.supportedLocales ?? const [Locale('ru')],
+      locale: strings?.locale ?? const Locale('ru'),
+      home: PixelShell(
+          api: api,
+          installerFactory: installerFactory,
+          navStyle: navStyle,
+          web: web,
+          onDownloads: onDownloads),
+    );
+  }
 }

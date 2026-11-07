@@ -44,6 +44,24 @@ void main() {
     expect(api.signedIn, true);
     api.dispose();
   });
+  test('registration derives the key and never sends the password', () async {
+    FlutterSecureStorage.setMockInitialValues({});
+    final api = PixelApi(
+        authUrl: 'https://auth.example',
+        client: MockClient((r) async {
+          expect(r.url.path, '/register');
+          final body = jsonDecode(r.body) as Map;
+          expect(body.containsKey('password'), false);
+          expect(body['authKey'], isNotEmpty);
+          expect((body['kdf'] as Map)['algorithm'], 'argon2id');
+          return http.Response('{"token":"new","refreshToken":"r"}', 201);
+        }));
+    await api.initialize();
+    await api.register('user', 'user@example.com', 'пароль 🔑');
+    expect(api.signedIn, true);
+    expect(api.deviceHeaders['device-fingerprint'], isNotEmpty);
+    api.dispose();
+  });
   test(
       'numeric IDs/prices and future releases parse without legacy string assumptions',
       () {
@@ -53,7 +71,17 @@ void main() {
       'price': '149.90',
       'metadata': {'release_status': 'development'}
     });
-    expect(g.id, 7);
+    expect(g.id, '7');
+    expect(gameKey(g.id), 7);
+    final production = Game.fromJson({
+      'id': '4f516806-ae26-46e4-ba87-bba1ca2c59c9',
+      'title': 'Keep Pixel Platform',
+      'price': '0.00',
+      'metadata': {'release_status': 'development'}
+    });
+    expect(production.id, '4f516806-ae26-46e4-ba87-bba1ca2c59c9');
+    expect(gameKey(production.id), gameKey(production.id));
+    expect(gameKey(production.id), greaterThan(0));
     expect(g.price, 149.9);
     expect(g.released, false);
     expect(g.priceLabel, 'В разработке');

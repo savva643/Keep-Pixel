@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import '../core/api.dart';
 import '../core/models.dart';
+import 'profile.dart';
 import 'shared.dart';
 
 class FriendsPage extends StatefulWidget {
@@ -106,18 +107,20 @@ class _FriendsPageState extends State<FriendsPage> {
   }
 
   @override
-  Widget build(BuildContext context) =>
-      ListView(padding: const EdgeInsets.all(24), children: [
+  Widget build(BuildContext context) => KpPage(maxWidth: 900, children: [
         Row(children: [
           const Expanded(
               child: Text('Друзья',
-                  style: TextStyle(fontSize: 26, fontWeight: FontWeight.w700))),
+                  style: TextStyle(
+                      fontSize: 28,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: -.6))),
           IconButton(
               tooltip: 'Обновить друзей',
               onPressed: () => load(),
               icon: const Icon(Icons.refresh_rounded))
         ]),
-        const SizedBox(height: 8),
+        const SizedBox(height: 6),
         const Text(
             'Общие друзья Necsoura. Заявки и изменения синхронизируются между сервисами.',
             style: TextStyle(color: muted, height: 1.7)),
@@ -129,10 +132,10 @@ class _FriendsPageState extends State<FriendsPage> {
             (2, 'Найти'),
             (3, 'Заблокированные')
           ])
-            ChoiceChip(
-                label: Text(name),
+            KpChip(
+                label: name,
                 selected: section == i,
-                onSelected: (_) {
+                onTap: () {
                   setState(() => section = i);
                   load();
                 })
@@ -186,19 +189,24 @@ class _FriendsPageState extends State<FriendsPage> {
                                   runSpacing: 12,
                                   crossAxisAlignment: WrapCrossAlignment.center,
                                   children: [
-                                    SizedBox(
-                                        width: 48,
-                                        height: 48,
-                                        child: ClipRRect(
-                                            borderRadius:
-                                                BorderRadius.circular(12),
-                                            child: Artwork(friend.avatar,
-                                                label: friend
-                                                    .name.characters.first))),
+                                    Tooltip(
+                                        message: 'Открыть профиль',
+                                        child: Hovered(
+                                            onTap: () => showPublicProfile(
+                                                context,
+                                                widget.api,
+                                                friend.id,
+                                                friend.name),
+                                            builder: (_, __) => SizedBox.square(
+                                                dimension: 48,
+                                                child: ClipOval(
+                                                    child: Artwork(
+                                                        friend.avatar,
+                                                        label: friend.name))))),
                                     SizedBox(
                                         width: box.maxWidth > 600
                                             ? 260
-                                            : box.maxWidth - 100,
+                                            : box.maxWidth - 136,
                                         child: Column(
                                             crossAxisAlignment:
                                                 CrossAxisAlignment.start,
@@ -227,7 +235,7 @@ class _FriendsPageState extends State<FriendsPage> {
                                                                   'online' ||
                                                               friend.status ==
                                                                   'in_game'
-                                                          ? accent
+                                                          ? Kp.online
                                                           : muted,
                                                       fontSize: 11,
                                                       height: 1.8))

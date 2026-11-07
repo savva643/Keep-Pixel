@@ -41,3 +41,6 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# Screenshots rendered by tool/preview/shots_test.dart
+/tool/preview/shots/

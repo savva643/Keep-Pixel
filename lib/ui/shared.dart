@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'style.dart';
 
-const muted = Color(0xFFA1AFBF);
-const accent = Color(0xFF91C2FF);
+export 'style.dart';
+
+const muted = Kp.muted;
+const accent = Kp.lilac;
 
 void notice(BuildContext context, String message) =>
     ScaffoldMessenger.of(context).showSnackBar(
@@ -23,42 +26,17 @@ class Artwork extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     Widget placeholder() => LayoutBuilder(builder: (context, box) {
-          if (box.maxWidth < 100 || box.maxHeight < 128) {
-            return Container(
-                color: const Color(0xFF344963),
-                child: Center(
-                    child: label.isEmpty
-                        ? const Icon(Icons.videogame_asset_outlined,
-                            size: 24, color: accent)
-                        : Text(label.characters.first.toUpperCase(),
-                            style: const TextStyle(
-                                fontSize: 22,
-                                fontWeight: FontWeight.w700,
-                                color: accent))));
-          }
-          return Container(
-            decoration: const BoxDecoration(
-                gradient: LinearGradient(
-                    colors: [Color(0xFF344963), Color(0xFF1F2935)],
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight)),
-            child: Center(
-                child: Column(mainAxisSize: MainAxisSize.min, children: [
-              const Icon(Icons.extension_rounded,
-                  size: 48, color: Color(0xFFA4BDDF)),
-              const SizedBox(height: 12),
-              Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  child: Text(label,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(
-                          color: Color(0xFFD0DDED),
-                          fontSize: 16,
-                          fontWeight: FontWeight.w600)))
-            ])),
-          );
+          final art = KpArt(label.isEmpty ? 'Keep Pixel' : label);
+          if (box.maxWidth >= 100 || label.isEmpty) return art;
+          return Stack(fit: StackFit.expand, children: [
+            art,
+            Center(
+                child: Text(label.characters.first.toUpperCase(),
+                    style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w800,
+                        color: Kp.text)))
+          ]);
         });
     final uri = Uri.tryParse(url);
     if (uri == null ||
@@ -80,15 +58,17 @@ class Artwork extends StatelessWidget {
 class StatePanel extends StatelessWidget {
   final IconData icon;
   final String title, description;
-  final String? action;
-  final VoidCallback? onAction;
+  final String? action, secondaryAction;
+  final VoidCallback? onAction, onSecondaryAction;
   const StatePanel(
       {super.key,
       this.icon = Icons.info_outline_rounded,
       required this.title,
       required this.description,
       this.action,
-      this.onAction});
+      this.onAction,
+      this.secondaryAction,
+      this.onSecondaryAction});
   @override
   Widget build(BuildContext context) => Padding(
       padding: const EdgeInsets.symmetric(vertical: 48, horizontal: 20),
@@ -108,6 +88,12 @@ class StatePanel extends StatelessWidget {
                 if (action != null) ...[
                   const SizedBox(height: 24),
                   FilledButton(onPressed: onAction, child: Text(action!))
+                ],
+                if (secondaryAction != null) ...[
+                  const SizedBox(height: 8),
+                  TextButton(
+                      onPressed: onSecondaryAction,
+                      child: Text(secondaryAction!))
                 ]
               ]))));
 }
@@ -117,11 +103,15 @@ class Tag extends StatelessWidget {
   const Tag(this.label, {super.key});
   @override
   Widget build(BuildContext context) => Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+      padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 6),
       decoration: BoxDecoration(
-          color: accent.withValues(alpha: .1),
-          borderRadius: BorderRadius.circular(10)),
+          color: Kp.violet.withValues(alpha: .2),
+          borderRadius: Kp.r20,
+          border: Border.all(color: Kp.violet.withValues(alpha: .55))),
       child: Text(label,
           style: const TextStyle(
-              color: accent, fontSize: 11, fontWeight: FontWeight.w600)));
+              color: accent,
+              fontSize: 11,
+              letterSpacing: .4,
+              fontWeight: FontWeight.w700)));
 }
