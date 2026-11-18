@@ -451,7 +451,7 @@ class _Badge extends StatelessWidget {
               color: Kp.lilac, fontSize: 10, fontWeight: FontWeight.w700)));
 }
 
-/// Steam-like properties of a game: tabs on the left, the chosen one at right.
+/// Properties of a game: tabs on the left, the chosen one at right.
 class GameProperties extends StatefulWidget {
   final GameActions actions;
   const GameProperties({super.key, required this.actions});

@@ -109,6 +109,12 @@ class DownloadsController extends ChangeNotifier {
     unawaited(_pump());
   }
 
+  /// Takes finished, cancelled and failed downloads off the list.
+  void clearFinished() {
+    jobs.removeWhere((_, j) => !j.active);
+    _notify();
+  }
+
   void cancel(String id) {
     final j = jobs[id];
     if (j == null || !j.active) return;

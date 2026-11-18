@@ -10,6 +10,7 @@ import '../core/installer.dart';
 import 'auth_dialog.dart';
 import 'catalog.dart';
 import 'downloads.dart';
+import 'downloads_page.dart';
 import 'friends.dart';
 import 'game_overlay.dart';
 import 'library.dart';
@@ -17,6 +18,7 @@ import 'profile.dart';
 import 'settings.dart';
 import 'settings_window.dart';
 import 'shared.dart';
+import 'tray.dart';
 
 class PixelShell extends StatefulWidget {
   final PixelApi api;
@@ -85,6 +87,7 @@ class _PixelShellState extends State<PixelShell> with WidgetsBindingObserver {
   }
 
   AppLifecycleState lifecycle = AppLifecycleState.resumed;
+  AppTray? _tray;
   @override
   void initState() {
     super.initState();
@@ -94,12 +97,16 @@ class _PixelShellState extends State<PixelShell> with WidgetsBindingObserver {
     downloads.initialize();
     widget.onDownloads?.call(downloads);
     _loadPreferences();
+    if (_desktop && widget.onDownloads == null) {
+      _tray = AppTray(
+          onPage: (p) => p == _downloadsPage ? openDownloads() : select(p))
+        ..start();
+    }
     if (_windowedSettings) {
       SettingsWindow.listen(
           api: widget.api,
           onNavStyle: _setNavStyle,
           onStartPage: _setStartPage,
-          onEndpoints: _saveEndpoints,
           onSignIn: () => showLogin(context, widget.api));
     }
     widget.api.addListener(_syncSession);
@@ -130,6 +137,7 @@ class _PixelShellState extends State<PixelShell> with WidgetsBindingObserver {
   @override
   void dispose() {
     heartbeat?.cancel();
+    _tray?.dispose();
     widget.api.removeListener(_syncSession);
     WidgetsBinding.instance.removeObserver(this);
     downloads.dispose();
@@ -138,11 +146,6 @@ class _PixelShellState extends State<PixelShell> with WidgetsBindingObserver {
   }
 
   bool get _windowedSettings => _desktop && SettingsWindow.supported;
-
-  Future<String> _saveEndpoints(String shop, String account) async {
-    await widget.api.setEndpoints(shop, account);
-    return widget.api.checkConnection();
-  }
 
   void openSettings([SettingsSection? section]) {
     if (_windowedSettings) {
@@ -158,6 +161,10 @@ class _PixelShellState extends State<PixelShell> with WidgetsBindingObserver {
       select(4);
     }
   }
+
+  /// A full page on a computer; on a phone the sheet stays.
+  void openDownloads() =>
+      _desktop ? select(_downloadsPage) : showDownloads(context, downloads);
 
   void select(int index) {
     setState(() {
@@ -213,6 +220,8 @@ class _PixelShellState extends State<PixelShell> with WidgetsBindingObserver {
                 onAction: () => showLogin(context, widget.api),
                 secondaryAction: 'Настройки',
                 onSecondaryAction: openSettings),
+        _downloadsPage =>
+          DownloadsPage(downloads: downloads, onLibrary: () => select(1)),
         _ => SettingsView(
             key: ValueKey('settings-$_settingsOpened'),
             api: widget.api,
@@ -224,7 +233,6 @@ class _PixelShellState extends State<PixelShell> with WidgetsBindingObserver {
             onNavStyle: _setNavStyle,
             startPage: widget.web ? null : _startPage,
             onStartPage: _setStartPage,
-            onSaveEndpoints: _saveEndpoints,
             onSignIn: () => showLogin(context, widget.api),
             onBack: () => select(3)),
       };
@@ -233,7 +241,7 @@ class _PixelShellState extends State<PixelShell> with WidgetsBindingObserver {
       {TargetPlatform.windows, TargetPlatform.macOS, TargetPlatform.linux}
           .contains(defaultTargetPlatform);
 
-  // The website has no library or installs, like Steam's: those live in the
+  // The website has no library or installs: those live in the
   // client. Website on a wide screen: top menu. Computer: the player's choice.
   // Phone or a narrow window: floating dock.
   List<_NavItem> get _items =>
@@ -251,7 +259,7 @@ class _PixelShellState extends State<PixelShell> with WidgetsBindingObserver {
         final pages = PagePulse(
             trigger: page,
             child: IndexedStack(index: page, children: [
-              for (var i = 0; i < 5; i++)
+              for (var i = 0; i <= _downloadsPage; i++)
                 if (visited.contains(i))
                   TickerMode(enabled: page == i, child: content(i))
                 else
@@ -274,7 +282,8 @@ class _PixelShellState extends State<PixelShell> with WidgetsBindingObserver {
                     search: storeSearch,
                     api: widget.api,
                     downloads: downloads,
-                    onSelect: select),
+                    onSelect: select,
+                    onDownloads: openDownloads),
                 if (downloads.overlay.error != null)
                   MaterialBanner(
                       content: Text(downloads.overlay.error!),
@@ -328,7 +337,8 @@ class _PixelShellState extends State<PixelShell> with WidgetsBindingObserver {
                                           compact: !wide,
                                           canDownload: canDownload,
                                           downloads: downloads,
-                                          onSelect: select)))
+                                          onSelect: select,
+                                          onDownloads: openDownloads)))
                             ])
                           : pages),
                 if (!dock)
@@ -341,7 +351,7 @@ class _PixelShellState extends State<PixelShell> with WidgetsBindingObserver {
                         return Material(
                             color: Kp.raised,
                             child: InkWell(
-                                onTap: () => showDownloads(context, downloads),
+                                onTap: openDownloads,
                                 child: Padding(
                                     padding: const EdgeInsets.symmetric(
                                         horizontal: 20, vertical: 12),
@@ -374,6 +384,7 @@ class _PixelShellState extends State<PixelShell> with WidgetsBindingObserver {
 }
 
 const _wideLayout = 760.0;
+const _downloadsPage = 5;
 const _dockGap = 18.0, _dockHeight = 68.0;
 const _dockClearance = _dockGap + _dockHeight + 18;
 
@@ -391,23 +402,58 @@ class _Dock extends StatelessWidget {
   final bool compact, canDownload;
   final DownloadsController downloads;
   final void Function(int) onSelect;
+  final VoidCallback onDownloads;
   const _Dock(
       {required this.page,
       required this.items,
       required this.compact,
       required this.canDownload,
       required this.downloads,
-      required this.onSelect});
+      required this.onSelect,
+      required this.onDownloads});
+
+  static const _itemWidth = 86.0;
+
   @override
   Widget build(BuildContext context) {
-    Widget fit(Widget item) => compact ? Expanded(child: item) : item;
-    Widget nav(_NavItem item) => fit(_DockItem(
-        label: item.label,
-        selected: page == item.page || (page == 4 && item.page == 3),
-        compact: compact,
-        onTap: () => onSelect(item.page),
-        icon: (color) => Icon(item.icon, size: 22, color: color)));
     final profile = items.last;
+    // Every button, in order, and whether it is the current page.
+    final entries = <(bool, Widget Function(bool selected))>[
+      for (final item in items)
+        if (item != profile)
+          (
+            page == item.page,
+            (selected) => _DockItem(
+                label: item.label,
+                selected: selected,
+                compact: compact,
+                onTap: () => onSelect(item.page),
+                icon: (color) => Icon(item.icon, size: 22, color: color))
+          ),
+      if (canDownload)
+        (
+          page == _downloadsPage,
+          (selected) => ListenableBuilder(
+              listenable: downloads,
+              builder: (context, _) => _DockItem(
+                  label: 'Загрузки',
+                  selected: selected,
+                  compact: compact,
+                  onTap: onDownloads,
+                  icon: (color) => _DownloadGlyph(
+                      color: color, jobs: downloads.active.toList())))
+        ),
+      (
+        page == profile.page || page == 4,
+        (selected) => _DockItem(
+            label: profile.label,
+            selected: selected,
+            compact: compact,
+            onTap: () => onSelect(profile.page),
+            icon: (color) => Icon(profile.icon, size: 22, color: color))
+      ),
+    ];
+    final current = entries.indexWhere((e) => e.$1);
     return Padding(
         padding: EdgeInsets.symmetric(horizontal: compact ? 10 : 0),
         child: DecoratedBox(
@@ -428,26 +474,45 @@ class _Dock extends StatelessWidget {
                             color: Kp.surface.withValues(alpha: .86),
                             borderRadius: Kp.r24,
                             border: Border.all(color: Kp.line)),
-                        child: Row(
-                            mainAxisSize:
-                                compact ? MainAxisSize.max : MainAxisSize.min,
-                            children: [
-                              for (final item in items)
-                                if (item != profile) nav(item),
-                              if (canDownload)
-                                fit(ListenableBuilder(
-                                    listenable: downloads,
-                                    builder: (context, _) => _DockItem(
-                                        label: 'Загрузки',
-                                        selected: false,
-                                        compact: compact,
-                                        onTap: () =>
-                                            showDownloads(context, downloads),
-                                        icon: (color) => _DownloadGlyph(
-                                            color: color,
-                                            jobs: downloads.active.toList())))),
-                              nav(profile),
-                            ]))))));
+                        child: LayoutBuilder(builder: (context, box) {
+                          final width = compact
+                              ? box.maxWidth / entries.length
+                              : _itemWidth;
+                          return Stack(children: [
+                            // The highlight slides to the chosen button.
+                            AnimatedPositioned(
+                                duration: const Duration(milliseconds: 380),
+                                curve: Curves.easeOutBack,
+                                left: (current < 0 ? 0 : current) * width + 1,
+                                top: 6,
+                                bottom: 6,
+                                width: width - 2,
+                                child: AnimatedOpacity(
+                                    duration: Kp.motion,
+                                    opacity: current < 0 ? 0 : 1,
+                                    child: DecoratedBox(
+                                        decoration: BoxDecoration(
+                                            borderRadius: Kp.r20,
+                                            gradient: Kp.gradient,
+                                            boxShadow: [
+                                          BoxShadow(
+                                              color: Kp.violet
+                                                  .withValues(alpha: .45),
+                                              blurRadius: 18,
+                                              offset: const Offset(0, 4))
+                                        ])))),
+                            Row(
+                                mainAxisSize: compact
+                                    ? MainAxisSize.max
+                                    : MainAxisSize.min,
+                                children: [
+                                  for (final (selected, build) in entries)
+                                    compact
+                                        ? Expanded(child: build(selected))
+                                        : build(selected),
+                                ]),
+                          ]);
+                        }))))));
   }
 }
 
@@ -503,31 +568,40 @@ class _DockItem extends StatelessWidget {
                   transform: Matrix4.translationValues(0, hover ? -2 : 0, 0),
                   decoration: BoxDecoration(
                       borderRadius: Kp.r20,
-                      gradient: selected ? Kp.gradient : null,
-                      color: selected
-                          ? null
-                          : hover
-                              ? Kp.raised
-                              : Colors.transparent),
+                      color: !selected && hover
+                          ? Kp.raised.withValues(alpha: .7)
+                          : Colors.transparent),
                   child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        icon(selected
-                            ? Colors.white
-                            : hover
-                                ? Kp.lilac
-                                : Kp.muted),
+                        AnimatedScale(
+                            duration: const Duration(milliseconds: 380),
+                            curve: Curves.easeOutBack,
+                            scale: selected ? 1.12 : 1,
+                            child: TweenAnimationBuilder<Color?>(
+                                duration: Kp.motion,
+                                tween: ColorTween(
+                                    end: selected
+                                        ? Colors.white
+                                        : hover
+                                            ? Kp.lilac
+                                            : Kp.muted),
+                                builder: (context, color, _) =>
+                                    icon(color ?? Kp.muted))),
                         const SizedBox(height: 3),
-                        Text(label,
-                            maxLines: 1,
-                            overflow: TextOverflow.fade,
-                            softWrap: false,
+                        AnimatedDefaultTextStyle(
+                            duration: Kp.motion,
                             style: TextStyle(
+                                fontFamily: 'Montserrat',
                                 fontSize: compact ? 10 : 11,
                                 fontWeight: selected
                                     ? FontWeight.w700
                                     : FontWeight.w500,
-                                color: selected ? Colors.white : Kp.muted))
+                                color: selected ? Colors.white : Kp.muted),
+                            child: Text(label,
+                                maxLines: 1,
+                                overflow: TextOverflow.fade,
+                                softWrap: false))
                       ])))));
 }
 
@@ -539,6 +613,7 @@ class _TopBar extends StatelessWidget {
   final PixelApi api;
   final DownloadsController downloads;
   final void Function(int) onSelect;
+  final VoidCallback onDownloads;
   const _TopBar(
       {required this.desktop,
       required this.wide,
@@ -550,6 +625,7 @@ class _TopBar extends StatelessWidget {
       required this.search,
       required this.api,
       required this.downloads,
+      required this.onDownloads,
       required this.onSelect});
   @override
   Widget build(BuildContext context) {
@@ -595,7 +671,7 @@ class _TopBar extends StatelessWidget {
             listenable: downloads,
             builder: (context, _) => IconButton(
                 tooltip: 'Загрузки',
-                onPressed: () => showDownloads(context, downloads),
+                onPressed: onDownloads,
                 icon: _DownloadGlyph(
                     color: Kp.muted, jobs: downloads.active.toList()))),
       if (!api.signedIn)

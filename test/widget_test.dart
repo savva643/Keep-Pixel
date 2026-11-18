@@ -183,7 +183,6 @@ void main() {
                 navStyle: NavStyle.dock,
                 onNavStyle: (style) => chosen = style,
                 startPage: 0,
-                onSaveEndpoints: (_, __) async => '',
                 onSignIn: () {}))));
     await tester.pumpAndSettle();
     expect(find.text('Войди в аккаунт Necsoura'), findsOneWidget);
@@ -192,9 +191,9 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('Верхнее меню'));
     expect(chosen, NavStyle.top);
-    await tester.tap(find.byKey(const ValueKey('settings-connection')));
-    await tester.pumpAndSettle();
-    expect(find.text('Адрес API магазина'), findsOneWidget);
+    // The client always talks to the Necsoura domain: no server settings.
+    expect(find.byKey(const ValueKey('settings-connection')), findsNothing);
+    expect(find.byKey(const ValueKey('settings-storage')), findsNothing);
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox());
     api.dispose();

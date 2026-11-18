@@ -19,7 +19,7 @@ Map<String, dynamic> _sessionOf(PixelApi api) => {
       'device': api.deviceHeaders['device-fingerprint'] ?? '',
     };
 
-/// Settings in their own window, like Steam. The session belongs to the main
+/// Settings in their own window. The session belongs to the main
 /// window: this one borrows its token and asks it to renew or end the session.
 class SettingsWindow {
   static bool get supported =>
@@ -68,7 +68,6 @@ class SettingsWindow {
       {required PixelApi api,
       required ValueChanged<NavStyle> onNavStyle,
       required ValueChanged<int> onStartPage,
-      required Future<String> Function(String api, String auth) onEndpoints,
       required VoidCallback onSignIn}) async {
     final main = await WindowController.fromCurrentEngine();
     await main.setWindowMethodHandler((call) async {
@@ -90,14 +89,6 @@ class SettingsWindow {
           await api.logout();
         case 'profile':
           api.profileChanged();
-        case 'endpoints':
-          try {
-            final map = Map<String, dynamic>.from(args as Map);
-            return await onEndpoints(
-                map['api'] as String, map['auth'] as String);
-          } catch (e) {
-            throw PlatformException(code: 'endpoints', message: '$e');
-          }
       }
       return null;
     });
@@ -228,15 +219,6 @@ class _SettingsAppState extends State<_SettingsApp> {
                   onSignIn: () async {
                     await main.invokeMethod<void>('signIn');
                     await _subWindow.invokeMethod('close');
-                  },
-                  onSaveEndpoints: (api, auth) async {
-                    try {
-                      return await main.invokeMethod<String>(
-                              'endpoints', {'api': api, 'auth': auth}) ??
-                          '';
-                    } on PlatformException catch (e) {
-                      throw e.message ?? 'Не удалось сохранить';
-                    }
                   })),
         ])));
   }

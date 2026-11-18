@@ -7,6 +7,8 @@ class GameInstaller {
   Future<Map<String, String>> installedGames() async => {};
   Future<Map<String, String>> installedLocations() async => {};
   Future<List<Drive>> drives() async => [];
+  Future<PhoneStorage?> phoneStorage() async => null;
+  Future<void> clearCache() async {}
   Future<List<LibraryFolder>> libraries() async => [];
   Future<String> addLibrary(String chosen) async =>
       throw UnsupportedError('Папки с играми есть только в клиенте Windows');

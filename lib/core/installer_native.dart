@@ -237,6 +237,50 @@ class GameInstaller {
     return total;
   }
 
+  /// Space Keep Pixel uses on Android and iOS; null elsewhere.
+  Future<PhoneStorage?> phoneStorage() async {
+    if (!Platform.isAndroid && !Platform.isIOS) return null;
+    final support = (await getApplicationSupportDirectory()).path;
+    final documents = (await getApplicationDocumentsDirectory()).path;
+    final cache = (await getTemporaryDirectory()).path;
+    int? free, total;
+    if (Platform.isAndroid) {
+      try {
+        // df -k: Filesystem 1K-blocks Used Available Use% Mounted on
+        final r = await Process.run('df', ['-k', support]);
+        final cells = (r.stdout as String)
+            .trim()
+            .split('\n')
+            .last
+            .trim()
+            .split(RegExp(r'\s+'));
+        total = int.parse(cells[1]) * 1024;
+        free = int.parse(cells[3]) * 1024;
+      } catch (_) {
+        // The bar is hidden; Keep Pixel's own usage is still shown.
+      }
+    }
+    var data = await _size(support);
+    if (!p.isWithin(support, documents) && documents != support) {
+      data += await _size(documents);
+    }
+    return PhoneStorage(
+        data: data, cache: await _size(cache), free: free, total: total);
+  }
+
+  /// Deletes covers and temporary files; the session and settings stay.
+  Future<void> clearCache() async {
+    final dir = Directory((await getTemporaryDirectory()).path);
+    if (!await dir.exists()) return;
+    await for (final entry in dir.list(followLinks: false)) {
+      try {
+        await entry.delete(recursive: true);
+      } on FileSystemException {
+        // In use right now; it goes next time.
+      }
+    }
+  }
+
   Future<int> gameSize(String id) async {
     final dir = await _locate(id);
     return dir == null ? 0 : _size(dir);
@@ -254,7 +298,7 @@ class GameInstaller {
     await Process.start('explorer', [dir.path]);
   }
 
-  /// Moves an installed game to another library, the way Steam does.
+  /// Moves an installed game to another library folder.
   Future<void> moveGame(
       String id, String library, void Function(double) progress) async {
     final source = await _locate(id);

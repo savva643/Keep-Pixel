@@ -1,4 +1,5 @@
 import 'package:file_picker/file_picker.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import '../core/api.dart';
 import '../core/installer.dart';
@@ -7,6 +8,7 @@ import '../necsoura/necsoura_account_screen.dart';
 import 'auth_dialog.dart';
 import 'game_actions.dart';
 import 'profile.dart';
+import 'two_factor.dart';
 import 'shared.dart';
 
 enum NavStyle { dock, top }
@@ -30,13 +32,13 @@ enum SettingsSection {
   games(
       'Игры',
       Icons.sports_esports_rounded,
-      'Папки с играми на дисках, как библиотеки в Steam. Новые игры ставятся в папку по умолчанию, при установке можно выбрать другую.',
+      'Папки с играми на дисках. Новые игры ставятся в папку по умолчанию, при установке можно выбрать другую.',
       'Папки с играми на дисках'),
-  connection(
-      'Подключение',
-      Icons.dns_rounded,
-      'Адреса серверов. Менять их нужно только для своего сервера.',
-      'Адреса серверов'),
+  storage(
+      'Память',
+      Icons.sd_storage_rounded,
+      'Сколько места Keep Pixel занимает на телефоне.',
+      'Место на телефоне и кэш'),
   about('О программе', Icons.info_rounded, '', 'Версия и ссылки');
 
   final String label, description, hint;
@@ -44,7 +46,7 @@ enum SettingsSection {
   const SettingsSection(this.label, this.icon, this.description, this.hint);
 }
 
-/// Settings like Steam's: categories on the left, the chosen one on the right.
+/// Settings: categories on the left, the chosen one on the right.
 /// On a phone the categories are a list that opens each one as a page.
 class SettingsView extends StatefulWidget {
   final PixelApi api;
@@ -58,14 +60,12 @@ class SettingsView extends StatefulWidget {
   final ValueChanged<NavStyle>? onNavStyle;
   final int? startPage;
   final ValueChanged<int>? onStartPage;
-  final Future<String> Function(String api, String auth) onSaveEndpoints;
   final VoidCallback onSignIn;
   final VoidCallback? onBack;
   const SettingsView(
       {super.key,
       required this.api,
       required this.installer,
-      required this.onSaveEndpoints,
       required this.onSignIn,
       this.section,
       this.navStyle,
@@ -100,6 +100,9 @@ class SettingsViewState extends State<SettingsView> {
         SettingsSection.interface =>
           widget.navStyle != null || widget.startPage != null,
         SettingsSection.games => widget.installer?.supported ?? false,
+        SettingsSection.storage => widget.installer != null &&
+            !widget.installer!.supported &&
+            phoneSystem,
         _ => true,
       };
 
@@ -114,8 +117,7 @@ class SettingsViewState extends State<SettingsView> {
             startPage: widget.startPage,
             onStartPage: widget.onStartPage),
         SettingsSection.games => _GamesPane(installer: widget.installer!),
-        SettingsSection.connection =>
-          _ConnectionPane(api: widget.api, onSave: widget.onSaveEndpoints),
+        SettingsSection.storage => _StoragePane(installer: widget.installer!),
         SettingsSection.about => _AboutPane(api: widget.api),
       };
 
@@ -140,7 +142,9 @@ class SettingsViewState extends State<SettingsView> {
                   padding: const EdgeInsets.only(bottom: 8),
                   child: _BackRow(label: 'Настройки', onBack: widget.onBack!)),
             _AccountChip(
-                profile: profile, onTap: () => show(SettingsSection.account)),
+                profile: profile,
+                cached: widget.api.cachedProfile,
+                onTap: () => show(SettingsSection.account)),
             const SizedBox(height: 12),
             for (final section in SettingsSection.values)
               if (_available(section))
@@ -181,6 +185,7 @@ class SettingsViewState extends State<SettingsView> {
                     const SizedBox(height: 14),
                     _AccountChip(
                         profile: profile,
+                        cached: widget.api.cachedProfile,
                         onTap: () => show(SettingsSection.account)),
                     const SizedBox(height: 14),
                     KpPanel(
@@ -338,13 +343,15 @@ class _SectionTile extends StatelessWidget {
 /// Who is signed in, at the top of the categories.
 class _AccountChip extends StatelessWidget {
   final Future<PixelProfile>? profile;
+  final PixelProfile? cached;
   final VoidCallback onTap;
-  const _AccountChip({required this.profile, required this.onTap});
+  const _AccountChip({required this.profile, required this.onTap, this.cached});
   @override
   Widget build(BuildContext context) => FutureBuilder<PixelProfile>(
       future: profile,
+      initialData: cached,
       builder: (context, state) {
-        final p = profile == null ? null : state.data;
+        final p = profile == null ? null : state.data ?? cached;
         final signedOut = profile == null;
         return Hovered(
             onTap: onTap,
@@ -562,11 +569,28 @@ class _AccountPane extends StatelessWidget {
             // The shared screen focuses its first row for TV remotes. Here that
             // would only leave a stray outline, so something else takes focus.
             child: FocusScope(
-                child: Stack(fit: StackFit.expand, children: [
-              const Focus(autofocus: true, child: SizedBox.shrink()),
-              NecsouraAccountScreen(
-                  key: ValueKey('account-${api.sessionGeneration}')),
-            ]))));
+                child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                  // Two-step verification belongs to the Necsoura account,
+                  // so it sits here rather than among the app's settings.
+                  Padding(
+                      padding: EdgeInsets.fromLTRB(
+                          16, _Compact.of(context) ? 4 : 20, 16, 0),
+                      child: Center(
+                          child: ConstrainedBox(
+                              constraints: const BoxConstraints(maxWidth: 760),
+                              child: TwoFactorTile(
+                                  key: ValueKey(
+                                      'twofa-${api.sessionGeneration}'),
+                                  api: api)))),
+                  Expanded(
+                      child: Stack(fit: StackFit.expand, children: [
+                    const Focus(autofocus: true, child: SizedBox.shrink()),
+                    NecsouraAccountScreen(
+                        key: ValueKey('account-${api.sessionGeneration}')),
+                  ])),
+                ]))));
   }
 }
 
@@ -589,9 +613,10 @@ class _ProfilePane extends StatelessWidget {
     }
     return FutureBuilder<PixelProfile>(
         future: profile,
+        initialData: api.cachedProfile,
         builder: (context, state) {
           // While a saved profile reloads, the editor stays on screen.
-          final p = state.data;
+          final p = state.data ?? api.cachedProfile;
           if (p == null) {
             if (state.hasError) {
               return StatePanel(
@@ -999,128 +1024,200 @@ class _DriveTile extends StatelessWidget {
   }
 }
 
-class _ConnectionPane extends StatefulWidget {
-  final PixelApi api;
-  final Future<String> Function(String api, String auth) onSave;
-  const _ConnectionPane({required this.api, required this.onSave});
+/// Android and iOS: no drives or folders to choose, only the phone's memory.
+bool get phoneSystem =>
+    !kIsWeb &&
+    const {TargetPlatform.android, TargetPlatform.iOS}
+        .contains(defaultTargetPlatform);
+
+class _StoragePane extends StatefulWidget {
+  final GameInstaller installer;
+  const _StoragePane({required this.installer});
   @override
-  State<_ConnectionPane> createState() => _ConnectionPaneState();
+  State<_StoragePane> createState() => _StoragePaneState();
 }
 
-const _presets = [
-  (
-    'Necsoura',
-    'Защищённое подключение по домену',
-    'https://keeppixel.necsoura.ru',
-    'https://necsoura.ru/api/auth'
-  ),
-  (
-    'Напрямую по IP',
-    'Через Nginx, порт 80, без шифрования',
-    'http://85.112.56.145/api/keeppixel',
-    'http://85.112.56.145/api/auth'
-  ),
-];
+class _StoragePaneState extends State<_StoragePane> {
+  late Future<PhoneStorage?> usage = widget.installer.phoneStorage();
+  bool busy = false;
 
-class _ConnectionPaneState extends State<_ConnectionPane> {
-  late final shop = TextEditingController(text: widget.api.apiUrl),
-      account = TextEditingController(text: widget.api.authUrl);
-  bool busy = false, success = false;
-  String? result;
-  @override
-  void dispose() {
-    shop.dispose();
-    account.dispose();
-    super.dispose();
-  }
-
-  Future<void> save() async {
-    setState(() {
-      busy = true;
-      result = null;
-    });
+  Future<void> _clear() async {
+    setState(() => busy = true);
     try {
-      final message = await widget.onSave(shop.text, account.text);
-      if (mounted) {
-        setState(() {
-          success = true;
-          result = message;
-        });
-      }
+      await widget.installer.clearCache();
+      if (mounted) notice(context, 'Кэш очищен');
     } catch (e) {
+      if (mounted) notice(context, '$e');
+    } finally {
       if (mounted) {
         setState(() {
-          success = false;
-          result = '$e';
+          busy = false;
+          usage = widget.installer.phoneStorage();
         });
       }
-    } finally {
-      if (mounted) setState(() => busy = false);
     }
   }
 
   @override
   Widget build(BuildContext context) =>
-      _Pane(section: SettingsSection.connection, children: [
-        KpPanel(
-            child:
-                Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          const Text('Сервер', style: TextStyle(fontWeight: FontWeight.w700)),
-          const SizedBox(height: 10),
-          for (final (title, hint, api, auth) in _presets)
-            ListenableBuilder(
-                listenable: Listenable.merge([shop, account]),
-                builder: (context, _) => _Choice(
-                    icon: api.startsWith('https')
-                        ? Icons.lock_rounded
-                        : Icons.lan_rounded,
-                    title: title,
-                    subtitle: hint,
-                    selected: shop.text == api && account.text == auth,
-                    onTap: busy
-                        ? null
-                        : () {
-                            shop.text = api;
-                            account.text = auth;
-                          })),
-          const SizedBox(height: 8),
-          TextField(
-              controller: shop,
-              enabled: !busy,
-              keyboardType: TextInputType.url,
-              decoration:
-                  const InputDecoration(labelText: 'Адрес API магазина')),
-          const SizedBox(height: 12),
-          TextField(
-              controller: account,
-              enabled: !busy,
-              keyboardType: TextInputType.url,
-              decoration:
-                  const InputDecoration(labelText: 'Адрес API аккаунтов')),
-          const SizedBox(height: 16),
-          SizedBox(
-              width: _Compact.of(context) ? double.infinity : null,
-              child: FilledButton.icon(
-                  style: FilledButton.styleFrom(minimumSize: const Size(0, 50)),
-                  onPressed: busy ? null : save,
-                  icon: const Icon(Icons.wifi_tethering_rounded),
-                  label: Text(busy ? 'Проверка…' : 'Сохранить и проверить'))),
-          const SizedBox(height: 10),
-          const Text('После смены сервера нужно войти заново.', style: _note),
-          if (result != null)
-            Padding(
-                padding: const EdgeInsets.only(top: 12),
-                child: SelectableText(result!,
-                    style: TextStyle(
-                        color: success ? Kp.online : Kp.error, height: 1.6))),
-        ])),
-        const SizedBox(height: 16),
-        Text(
-            widget.api.persistentSession
-                ? 'Сеанс сохраняется в защищённом хранилище устройства.'
-                : 'В HTTP-браузере сеанс хранится только в памяти вкладки. После перезагрузки потребуется вход.',
-            style: _note),
+      _Pane(section: SettingsSection.storage, children: [
+        FutureBuilder<PhoneStorage?>(
+            future: usage,
+            builder: (context, state) {
+              final s = state.data;
+              if (state.connectionState != ConnectionState.done) {
+                return const Padding(
+                    padding: EdgeInsets.all(24),
+                    child: Center(child: CircularProgressIndicator()));
+              }
+              if (s == null) {
+                return const Text('Не удалось узнать, сколько места занято',
+                    style: _note);
+              }
+              final total = s.total, free = s.free;
+              final known = total != null && free != null && total > 0;
+              final other =
+                  known ? (total - free - s.data - s.cache).clamp(0, total) : 0;
+              return Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    KpPanel(
+                        child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                          Row(children: [
+                            Container(
+                                width: 44,
+                                height: 44,
+                                decoration: const BoxDecoration(
+                                    gradient: LinearGradient(
+                                        colors: [Kp.violet, Kp.blue]),
+                                    borderRadius: Kp.r14),
+                                child: const Icon(Icons.smartphone_rounded,
+                                    color: Colors.white)),
+                            const SizedBox(width: 12),
+                            Expanded(
+                                child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                  const Text('Память телефона',
+                                      style: TextStyle(
+                                          fontSize: 16,
+                                          fontWeight: FontWeight.w800)),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                      known
+                                          ? 'Свободно ${formatBytes(free)} из ${formatBytes(total)}'
+                                          : 'Keep Pixel занимает ${formatBytes(s.data + s.cache)}',
+                                      style: _note),
+                                ])),
+                          ]),
+                          if (known) ...[
+                            const SizedBox(height: 16),
+                            ClipRRect(
+                                borderRadius: BorderRadius.circular(6),
+                                child: SizedBox(
+                                    height: 12,
+                                    child: LayoutBuilder(
+                                        builder: (context, box) {
+                                      double w(int bytes) =>
+                                          box.maxWidth * bytes / total;
+                                      return Stack(children: [
+                                        Container(color: Kp.line),
+                                        Row(children: [
+                                          Container(
+                                              width: w(other),
+                                              color: Kp.muted
+                                                  .withValues(alpha: .45)),
+                                          Container(
+                                              width: w(s.data)
+                                                  .clamp(s.data > 0 ? 3 : 0,
+                                                      box.maxWidth),
+                                              color: Kp.violet),
+                                          Container(
+                                              width: w(s.cache)
+                                                  .clamp(s.cache > 0 ? 3 : 0,
+                                                      box.maxWidth),
+                                              color: Kp.lilac),
+                                        ]),
+                                      ]);
+                                    }))),
+                          ],
+                          const SizedBox(height: 14),
+                          _UsageRow(
+                              color: Kp.violet,
+                              title: 'Keep Pixel',
+                              subtitle: 'Вход, настройки и библиотека',
+                              bytes: s.data),
+                          _UsageRow(
+                              color: Kp.lilac,
+                              title: 'Кэш',
+                              subtitle: 'Обложки и временные файлы',
+                              bytes: s.cache),
+                          if (known) ...[
+                            _UsageRow(
+                                color: Kp.muted.withValues(alpha: .45),
+                                title: 'Другие приложения и файлы',
+                                bytes: other),
+                            _UsageRow(
+                                color: Kp.line, title: 'Свободно', bytes: free),
+                          ],
+                        ])),
+                    const SizedBox(height: 14),
+                    SizedBox(
+                        width: double.infinity,
+                        child: FilledButton.icon(
+                            style: FilledButton.styleFrom(
+                                minimumSize: const Size(0, 50)),
+                            onPressed: busy || s.cache == 0 ? null : _clear,
+                            icon: busy
+                                ? const SizedBox.square(
+                                    dimension: 18,
+                                    child: CircularProgressIndicator(
+                                        strokeWidth: 2))
+                                : const Icon(Icons.cleaning_services_rounded),
+                            label: Text(s.cache == 0
+                                ? 'Кэш пуст'
+                                : 'Очистить кэш · ${formatBytes(s.cache)}'))),
+                    const SizedBox(height: 10),
+                    const Text(
+                        'Очистка кэша не выходит из аккаунта и не трогает настройки: обложки загрузятся снова.',
+                        style: _note),
+                  ]);
+            }),
       ]);
+}
+
+class _UsageRow extends StatelessWidget {
+  final Color color;
+  final String title;
+  final String? subtitle;
+  final int bytes;
+  const _UsageRow(
+      {required this.color,
+      required this.title,
+      required this.bytes,
+      this.subtitle});
+  @override
+  Widget build(BuildContext context) => Padding(
+      padding: const EdgeInsets.symmetric(vertical: 7),
+      child: Row(children: [
+        Container(
+            width: 12,
+            height: 12,
+            decoration: BoxDecoration(
+                color: color, borderRadius: BorderRadius.circular(4))),
+        const SizedBox(width: 12),
+        Expanded(
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text(title, style: const TextStyle(fontWeight: FontWeight.w700)),
+          if (subtitle != null)
+            Text(subtitle!, style: const TextStyle(color: muted, fontSize: 12)),
+        ])),
+        Text(formatBytes(bytes),
+            style: const TextStyle(fontWeight: FontWeight.w700)),
+      ]));
 }
 
 class _AboutPane extends StatelessWidget {

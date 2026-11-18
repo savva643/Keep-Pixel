@@ -36,7 +36,7 @@ class _LibraryPageState extends State<LibraryPage> {
   List<Game> games = [];
   List<PixelFriend> friends = [];
 
-  /// Null shows the library home, like Steam.
+  /// Null shows the library home.
   String? selected;
   bool loading = true;
   String? error;
@@ -112,7 +112,7 @@ class _LibraryPageState extends State<LibraryPage> {
   (String, DateTime)? _lastTap;
 
   /// A click opens the game at once; a second click on the same game soon
-  /// after starts it, as a double click does in Steam.
+  /// after starts it, as a double click does in launchers.
   void tapTile(Game g, {required bool wide}) {
     final now = DateTime.now(), last = _lastTap;
     _lastTap = (g.id, now);
@@ -205,6 +205,30 @@ class _LibraryPageState extends State<LibraryPage> {
         });
       });
 
+  /// One row of filters. It scrolls from edge to edge, so chips slide under
+  /// the side of the panel instead of stopping at its padding.
+  Widget _filters() {
+    final items = [
+      (_Filter.all, 'Все'),
+      (_Filter.installed, 'Установленные'),
+      (_Filter.favorites, 'Избранное'),
+      if (prefs.hidden.isNotEmpty || filter == _Filter.hidden)
+        (_Filter.hidden, 'Скрытые'),
+    ];
+    return SizedBox(
+        height: 52,
+        child: ListView.separated(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.fromLTRB(16, 10, 16, 4),
+            itemCount: items.length,
+            separatorBuilder: (_, __) => const SizedBox(width: 6),
+            itemBuilder: (context, i) => Center(
+                child: KpChip(
+                    label: items[i].$2,
+                    selected: filter == items[i].$1,
+                    onTap: () => setState(() => filter = items[i].$1)))));
+  }
+
   Widget _sidebar(List<Game> list, {required bool wide}) {
     final favorites = filter == _Filter.all
         ? list.where((g) => prefs.isFavorite(g.id)).toList()
@@ -243,21 +267,8 @@ class _LibraryPageState extends State<LibraryPage> {
                     hintText: 'Поиск в библиотеке',
                     prefixIcon: Icon(Icons.search, size: 20)),
                 onChanged: (s) => setState(() => query = s)),
-            const SizedBox(height: 10),
-            Wrap(spacing: 6, runSpacing: 6, children: [
-              for (final (f, label) in [
-                (_Filter.all, 'Все'),
-                (_Filter.installed, 'Установленные'),
-                (_Filter.favorites, 'Избранное'),
-                if (prefs.hidden.isNotEmpty || filter == _Filter.hidden)
-                  (_Filter.hidden, 'Скрытые'),
-              ])
-                KpChip(
-                    label: label,
-                    selected: filter == f,
-                    onTap: () => setState(() => filter = f)),
-            ]),
           ])),
+      SliverToBoxAdapter(child: _filters()),
       if (recent.isNotEmpty && query.isEmpty && filter == _Filter.all) ...[
         const SliverPadding(
             padding: EdgeInsets.fromLTRB(16, 14, 16, 10),
@@ -555,7 +566,7 @@ class _RecentCard extends StatelessWidget {
 }
 
 /// The library start page: recent games, friends in games and every game as
-/// a cover, the way Steam and the Epic launcher show a collection.
+/// a cover, the way launchers show a collection.
 class _LibraryHome extends StatelessWidget {
   final List<Game> games, all;
   final LibraryPrefs prefs;
@@ -797,7 +808,7 @@ class _CoverCard extends StatelessWidget {
   }
 }
 
-/// A game in the library, laid out like Steam's game page: a hero banner, a
+/// A game in the library, laid out as a game page: a hero banner, a
 /// bar with the play button and stats, then news, details and friends.
 class LibraryGamePage extends StatefulWidget {
   final Game initial;

@@ -28,6 +28,11 @@ class FlutterWindow : public Win32Window {
  private:
   std::unique_ptr<flutter::MethodChannel<flutter::EncodableValue>> overlay_channel_;
   std::unique_ptr<GameOverlay> overlay_;
+  // Closing the window hides it to the tray once the tray icon exists; only
+  // "Exit" in the tray menu really quits.
+  std::unique_ptr<flutter::MethodChannel<flutter::EncodableValue>> window_channel_;
+  bool tray_ready_ = false;
+  bool quitting_ = false;
 
   // The project to run.
   flutter::DartProject project_;

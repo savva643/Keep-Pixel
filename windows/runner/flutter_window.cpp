@@ -62,6 +62,23 @@ bool FlutterWindow::OnCreate() {
     } else { result->NotImplemented(); return; }
     result->Success();
   });
+  window_channel_ = std::make_unique<flutter::MethodChannel<flutter::EncodableValue>>(
+      flutter_controller_->engine()->messenger(), "keep_pixel/window",
+      &flutter::StandardMethodCodec::GetInstance());
+  window_channel_->SetMethodCallHandler([this](const auto& call, auto result) {
+    const auto& name = call.method_name();
+    if (name == "trayReady") {
+      tray_ready_ = true;
+    } else if (name == "show") {
+      HWND hwnd = GetHandle();
+      ::ShowWindow(hwnd, ::IsIconic(hwnd) ? SW_RESTORE : SW_SHOW);
+      ::SetForegroundWindow(hwnd);
+    } else if (name == "quit") {
+      quitting_ = true;
+      ::PostMessage(GetHandle(), WM_CLOSE, 0, 0);
+    } else { result->NotImplemented(); return; }
+    result->Success();
+  });
   SetChildContent(flutter_controller_->view()->GetNativeWindow());
 
   flutter_controller_->engine()->SetNextFrameCallback([&]() {
@@ -79,6 +96,7 @@ bool FlutterWindow::OnCreate() {
 void FlutterWindow::OnDestroy() {
   overlay_.reset();
   overlay_channel_.reset();
+  window_channel_.reset();
   if (flutter_controller_) {
     flutter_controller_ = nullptr;
   }
@@ -98,6 +116,9 @@ FlutterWindow::MessageHandler(HWND hwnd, UINT const message,
   }
   if (overlay_ && message == WM_CLOSE && overlay_->visible()) {
     overlay_->Close(); return 0;
+  }
+  if (message == WM_CLOSE && tray_ready_ && !quitting_) {
+    ::ShowWindow(hwnd, SW_HIDE); return 0;
   }
   // Give Flutter, including plugins, an opportunity to handle window messages.
   if (flutter_controller_) {

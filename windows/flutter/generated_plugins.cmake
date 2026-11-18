@@ -7,6 +7,7 @@ list(APPEND FLUTTER_PLUGIN_LIST
   desktop_multi_window
   desktop_webview_window
   flutter_secure_storage_windows
+  tray_manager
   url_launcher_windows
   window_to_front
 )

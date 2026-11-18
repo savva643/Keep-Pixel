@@ -10,10 +10,11 @@ import 'ui/settings.dart';
 import 'ui/settings_window.dart';
 import 'ui/shell.dart';
 import 'ui/style.dart';
+import 'ui/window_controls.dart';
 
 /// Translations for the shared Necsoura account screens.
 Widget withAccountStrings(Widget child) => EasyLocalization(
-    supportedLocales: const [Locale('ru')],
+    supportedLocales: const [Locale('ru'), Locale('en')],
     fallbackLocale: const Locale('ru'),
     startLocale: const Locale('ru'),
     useOnlyLangCode: true,
@@ -45,6 +46,9 @@ Future<void> main(List<String> args) async {
   }
 }
 
+/// Sign-in and other pages over the main screen keep the window buttons.
+final _coveringRoutes = CoveringRoutes();
+
 class KeepPixelApp extends StatelessWidget {
   final PixelApi api;
   final GameInstaller Function()? installerFactory;
@@ -69,6 +73,10 @@ class KeepPixelApp extends StatelessWidget {
           strings?.delegates ?? GlobalMaterialLocalizations.delegates,
       supportedLocales: strings?.supportedLocales ?? const [Locale('ru')],
       locale: strings?.locale ?? const Locale('ru'),
+      navigatorObservers: [if (desktopWindow) _coveringRoutes],
+      builder: (context, child) => desktopWindow
+          ? WindowControlsOverlay(routes: _coveringRoutes, child: child!)
+          : child!,
       home: PixelShell(
           api: api,
           installerFactory: installerFactory,

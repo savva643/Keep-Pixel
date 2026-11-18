@@ -1,5 +1,4 @@
-/// A folder where games are installed. Like Steam libraries, there can be one
-/// on every drive; new games go to the default one unless the player picks.
+/// A folder where games are installed. There can be one on every drive; new games go to the default one unless the player picks.
 class LibraryFolder {
   final String path;
   final bool isDefault, builtIn;
@@ -33,6 +32,18 @@ class Drive {
     final letter = root.replaceAll(r'\', '');
     return label.isEmpty ? 'Диск $letter' : '$label ($letter)';
   }
+}
+
+/// What Keep Pixel takes on a phone, and how full the phone is.
+class PhoneStorage {
+  /// Sign-in, settings and the library's own files.
+  final int data;
+
+  /// Covers and temporary files: safe to delete.
+  final int cache;
+  final int? free, total;
+  const PhoneStorage(
+      {required this.data, required this.cache, this.free, this.total});
 }
 
 String formatBytes(int bytes) {

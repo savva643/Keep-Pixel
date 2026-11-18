@@ -1,4 +1,6 @@
+import 'package:easy_localization/easy_localization.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter/material.dart';
 import '../core/api.dart';
 import '../necsoura/necsoura_api.dart';
@@ -69,11 +71,32 @@ void setupNecsoura(PixelApi api) {
   );
 }
 
+/// Sign-in: a window over the app on big screens, closed with the back
+/// button, Esc or a click outside; the whole screen on a phone.
 Future<bool> showLogin(BuildContext context, PixelApi api) async {
   setupNecsoura(api);
-  return await Navigator.of(context).push<bool>(MaterialPageRoute(
-          builder: (route) => NecsouraAuthScreen(
-              onSuccess: () => Navigator.of(route).pop(true)))) ??
+  final screen = MediaQuery.sizeOf(context);
+  if (screen.width < 760 || screen.height < 560) {
+    return await Navigator.of(context).push<bool>(MaterialPageRoute(
+            builder: (route) => NecsouraAuthScreen(
+                onSuccess: () => Navigator.of(route).pop(true)))) ??
+        false;
+  }
+  return await showDialog<bool>(
+          context: context,
+          barrierColor: Colors.black.withValues(alpha: .6),
+          builder: (route) => Dialog(
+              insetPadding: const EdgeInsets.all(32),
+              clipBehavior: Clip.antiAlias,
+              backgroundColor: Kp.bg,
+              shape: const RoundedRectangleBorder(
+                  borderRadius: BorderRadius.all(Radius.circular(28)),
+                  side: BorderSide(color: Kp.line)),
+              child: SizedBox(
+                  width: (screen.width - 64).clamp(0, 1080),
+                  height: (screen.height - 64).clamp(0, 720),
+                  child: NecsouraAuthScreen(
+                      onSuccess: () => Navigator.of(route).pop(true))))) ??
       false;
 }
 
@@ -112,40 +135,70 @@ class _TwoFactorDialogState extends State<_TwoFactorDialog> {
 
   @override
   Widget build(BuildContext context) => AlertDialog(
-          title: const Text('Подтвердите вход'),
+          icon: const Icon(Icons.verified_user_rounded,
+              color: Kp.lilac, size: 36),
+          title: Text('twofa.login_title'.tr()),
           content: SizedBox(
-              width: 360,
+              width: 380,
               child: Column(
                   mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
+                    Text(
+                        (backup ? 'twofa.login_backup_text' : 'twofa.login_text')
+                            .tr(),
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(color: muted, height: 1.5)),
+                    const SizedBox(height: 16),
                     TextField(
+                        key: ValueKey(backup),
                         controller: code,
                         enabled: !busy,
                         autofocus: true,
+                        textAlign: TextAlign.center,
+                        keyboardType:
+                            backup ? TextInputType.text : TextInputType.number,
+                        maxLength: backup ? 32 : 6,
+                        inputFormatters: backup
+                            ? null
+                            : [FilteringTextInputFormatter.digitsOnly],
+                        style: const TextStyle(
+                            fontSize: 20,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: 4),
                         decoration: InputDecoration(
-                            labelText:
-                                backup ? 'Резервный код' : 'Код из приложения'),
+                            counterText: '',
+                            hintText: (backup
+                                    ? 'twofa.login_backup'
+                                    : 'twofa.login_app')
+                                .tr()),
+                        onChanged: (v) {
+                          if (!backup && v.length == 6) submit();
+                        },
                         onSubmitted: (_) => submit()),
+                    const SizedBox(height: 6),
                     TextButton(
                         onPressed: busy
                             ? null
                             : () => setState(() {
                                   backup = !backup;
+                                  code.clear();
                                   error = null;
                                 }),
-                        child: Text(backup
-                            ? 'Код из приложения'
-                            : 'Использовать резервный код')),
+                        child: Text(
+                            (backup ? 'twofa.use_app' : 'twofa.use_backup').tr(),
+                            textAlign: TextAlign.center)),
                     if (error != null)
-                      Text(error!, style: const TextStyle(color: Kp.error)),
+                      Text(error!,
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(color: Kp.error)),
                   ])),
           actions: [
             TextButton(
                 onPressed: busy ? null : () => Navigator.pop(context, false),
-                child: const Text('Отмена')),
+                child: Text('twofa.cancel'.tr())),
             FilledButton(
                 onPressed: busy ? null : submit,
-                child: Text(busy ? 'Проверка…' : 'Подтвердить'))
+                child: Text((busy ? 'twofa.checking' : 'twofa.confirm').tr()))
           ]);
 }

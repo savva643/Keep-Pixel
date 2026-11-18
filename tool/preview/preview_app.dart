@@ -89,6 +89,15 @@ const _friends = [
   },
 ];
 
+/// A phone: no installs, only the memory Keep Pixel takes.
+class PhonePreviewInstaller extends PreviewInstaller {
+  @override
+  bool get supported => false;
+  @override
+  Future<PhoneStorage?> phoneStorage() async => const PhoneStorage(
+      data: 38 << 20, cache: 146 << 20, free: 41 << 30, total: 128 << 30);
+}
+
 class PreviewInstaller extends GameInstaller {
   static const installedIds = {'2': '1.0', '3': '1.0', '5': '0.9'};
   final bool animate;
@@ -295,31 +304,77 @@ Future<PixelApi> previewApi(PreviewScene scene) async {
             return reply({'version': '1.0', 'url': ''});
           }
           final game = catalog.firstWhere((g) => g['id'] == id);
-          return reply(id != 2
-              ? game
-              : {
-                  ...game,
-                  'updates': [
-                    {
-                      'version': '1.0',
-                      'title': 'Ночные маршруты',
-                      'description':
-                          'Новый район, ночные заказы и исправления сохранений.'
-                    },
-                    {
-                      'version': '0.9',
-                      'title': 'Первая публичная версия',
-                      'description': 'Три района города и режим доставки.'
-                    },
-                  ],
-                  'minimum_requirements': {
-                    'os': 'Windows 10 64-бит',
-                    'processor': '2 ядра, 2.5 ГГц',
-                    'memory': '4 ГБ',
-                    'graphics': 'С поддержкой OpenGL 3.3',
-                    'storage': '200 МБ'
-                  }
-                });
+          return reply({
+            ...game,
+            'metadata': {
+              ...(game['metadata'] as Map),
+              'trailer': 'https://www.youtube.com/watch?v=demo',
+              'screenshots': ['', '', '', ''],
+              'achievements': [
+                {
+                  'title': 'Первая доставка',
+                  'description': 'Доставьте первый заказ'
+                },
+                {
+                  'title': 'Ночной рейс',
+                  'description': 'Пройдите район ночью без аварий'
+                },
+                {
+                  'title': 'Город наизусть',
+                  'description': 'Откройте все районы'
+                },
+                {
+                  'title': 'Без опозданий',
+                  'description': '10 заказов подряд вовремя'
+                },
+              ],
+            },
+            'features': [
+              'Одиночная игра',
+              'Сохранения в облаке',
+              'Поддержка геймпада'
+            ],
+            'publisher': 'Keep Pixel',
+            'release_date': '2026-10-01',
+            'online_stats': [
+              {'current_players': 128, 'peak_today': 342}
+            ],
+            'reviews': [
+              {'rating': 5, 'review': 'Атмосферная игра, отличная музыка.'},
+              {'rating': 4, 'review': 'Коротко, но очень приятно.'},
+            ],
+            'social_links': {
+              'web': 'https://necsoura.ru',
+              'discord': 'https://discord.gg/demo'
+            },
+            'recommended_requirements': {
+              'os': 'Windows 11',
+              'processor': '4 ядра, 3 ГГц',
+              'memory': '8 ГБ',
+              'graphics': 'GTX 1050',
+              'storage': '200 МБ'
+            },
+            'updates': [
+              {
+                'version': '1.0',
+                'title': 'Ночные маршруты',
+                'description':
+                    'Новый район, ночные заказы и исправления сохранений.'
+              },
+              {
+                'version': '0.9',
+                'title': 'Первая публичная версия',
+                'description': 'Три района города и режим доставки.'
+              },
+            ],
+            'minimum_requirements': {
+              'os': 'Windows 10 64-бит',
+              'processor': '2 ядра, 2.5 ГГц',
+              'memory': '4 ГБ',
+              'graphics': 'С поддержкой OpenGL 3.3',
+              'storage': '200 МБ'
+            }
+          });
         }
         if (path.startsWith('/people/')) {
           return reply({
@@ -344,6 +399,27 @@ Future<PixelApi> previewApi(PreviewScene scene) async {
             'bio': 'Профиль для проверки дизайна.',
             'account': {'display_name': 'Демо-игрок'},
             'overrides': {}
+          });
+        }
+        if (path.endsWith('/2fa/status')) {
+          return reply({
+            'isEnabled': true,
+            'backupCodesGenerated': true,
+            'backupCodesLeft': 6
+          });
+        }
+        if (path.endsWith('/2fa/backup-codes')) {
+          return reply({
+            'backupCodes': [
+              'K7Q2M9XA',
+              'P4ZD8L1C',
+              'W9N3T6RB',
+              'H2V5Y8QE',
+              'M6C1J4UF',
+              'R3X7B2KD',
+              'T8L5P9GN',
+              'A1F6W3ZS'
+            ]
           });
         }
         return reply({'status': 'ok', 'success': true});

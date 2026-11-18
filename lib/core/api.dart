@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/foundation.dart';
 import 'auth/necsoura_password.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
@@ -44,7 +45,6 @@ class PixelApi extends ChangeNotifier {
   int profileRevision = 0;
   String _device = '';
   int sessionGeneration = 0;
-  bool _usesDefaults = false;
   bool get persistentSession => canPersistSession;
   final http.Client client;
   final FlutterSecureStorage storage;
@@ -59,9 +59,7 @@ class PixelApi extends ChangeNotifier {
       http.Client? client,
       this.storage = const FlutterSecureStorage(),
       this.owner})
-      : client = client ?? http.Client() {
-    _usesDefaults = apiUrl == defaultApi && authUrl == defaultAuth;
-  }
+      : client = client ?? http.Client();
   String get accountSite {
     final u = Uri.parse(authUrl);
     return Uri(
@@ -80,7 +78,7 @@ class PixelApi extends ChangeNotifier {
     return {
       'x-app-service': 'keeppixel',
       'platform': platform,
-      'device-name': 'Keep Pixel · $platform',
+      'device-name': 'Keep Pixel ($platform)',
       'device-type': kIsWeb
           ? 'web'
           : const {TargetPlatform.android, TargetPlatform.iOS}
@@ -127,10 +125,8 @@ class PixelApi extends ChangeNotifier {
             .join();
         await prefs.setString('keep_pixel_device', _device);
       }
-      if (_usesDefaults) {
-        apiUrl = prefs.getString('keep_pixel_api_url') ?? apiUrl;
-        authUrl = prefs.getString('keep_pixel_auth_url') ?? authUrl;
-      }
+      await prefs.remove('keep_pixel_api_url');
+      await prefs.remove('keep_pixel_auth_url');
       final saved = canPersistSession
           ? await storage.read(key: 'keep_pixel_session_v2')
           : null;
@@ -142,6 +138,11 @@ class PixelApi extends ChangeNotifier {
           _token = j['token'] as String?;
           _refresh = j['refreshToken'] as String?;
         }
+      }
+      final cached = _token == null ? null : prefs.getString(_profileKey);
+      if (cached != null) {
+        cachedProfile = PixelProfile.fromJson(
+            Map<String, dynamic>.from(jsonDecode(cached) as Map));
       }
     } catch (_) {
       startupError = 'Не удалось открыть сохранённый сеанс. Войдите снова.';
@@ -326,8 +327,68 @@ class PixelApi extends ChangeNotifier {
     _pending2fa = null;
   }
 
+  /// Where the auth service keeps two-step verification of the Necsoura
+  /// account, relative to [authUrl]. Same requests and answers as Kompot's
+  /// users/2fa routes.
+  static const twoFactorPath = '2fa';
+
+  Future<({bool enabled, bool backupCodes, int? backupLeft})>
+      twoFactorStatus() async {
+    final r = Map<String, dynamic>.from(
+        await _call(authUrl, '$twoFactorPath/status', authenticated: true)
+            as Map);
+    bool flag(Object? v) => v == true || v == 1;
+    final left = r['backupCodesLeft'];
+    return (
+      enabled: flag(r['isEnabled']),
+      backupCodes: flag(r['backupCodesGenerated']),
+      backupLeft: left is num ? left.toInt() : null
+    );
+  }
+
+  /// A new secret, not active until [twoFactorVerify] accepts a code.
+  Future<({String secret, String? otpauth, String? qrImage})>
+      twoFactorSetup() async {
+    final r = Map<String, dynamic>.from(await _call(
+        authUrl, '$twoFactorPath/setup',
+        method: 'POST', body: {}, authenticated: true) as Map);
+    final otpauth = r['otpauthUrl'] ?? r['otpauth_url'] ?? r['otpauth'];
+    final image = r['qrCodeData'];
+    return (
+      secret: '${r['secret'] ?? ''}',
+      otpauth: otpauth is String && otpauth.startsWith('otpauth://')
+          ? otpauth
+          : image is String && image.startsWith('otpauth://')
+              ? image
+              : null,
+      qrImage: image is String && image.startsWith('data:image/') ? image : null
+    );
+  }
+
+  /// Turns verification on; the answer brings the first backup codes.
+  Future<List<String>> twoFactorVerify(String code) async {
+    final r = await _call(authUrl, '$twoFactorPath/verify',
+        method: 'POST', body: {'code': code.trim()}, authenticated: true);
+    return _codes(r);
+  }
+
+  /// Needs a code from the app or a backup code.
+  Future<void> twoFactorDisable(String code) =>
+      _call(authUrl, '$twoFactorPath/disable',
+          method: 'POST', body: {'code': code.trim()}, authenticated: true);
+
+  /// New backup codes for a code from the app; the old ones stop working.
+  Future<List<String>> twoFactorBackupCodes(String code) async =>
+      _codes(await _call(authUrl, '$twoFactorPath/backup-codes',
+          method: 'POST', body: {'code': code.trim()}, authenticated: true));
+
+  List<String> _codes(Object? r) => r is Map && r['backupCodes'] is List
+      ? [for (final c in r['backupCodes'] as List) '$c']
+      : const [];
+
   Future<void> _clear() async {
     sessionGeneration++;
+    unawaited(_forgetProfile());
     _token = null;
     _refresh = null;
     _pending2fa = null;
@@ -381,9 +442,43 @@ class PixelApi extends ChangeNotifier {
           .toList();
   Future<void> claim(String id) async => _call(apiUrl, 'library/$id',
       method: 'POST', body: {}, authenticated: true);
-  Future<PixelProfile> profile() async =>
-      PixelProfile.fromJson(Map<String, dynamic>.from(
-          await _call(apiUrl, 'me', authenticated: true)));
+
+  /// The last profile seen, shown at once while a fresh copy loads. It stays
+  /// on this device only and is wiped when the player signs out.
+  PixelProfile? cachedProfile;
+  static const _profileKey = 'keep_pixel_profile_cache';
+
+  Future<PixelProfile> profile() async {
+    final generation = sessionGeneration;
+    final j = Map<String, dynamic>.from(
+        await _call(apiUrl, 'me', authenticated: true));
+    final p = PixelProfile.fromJson(j);
+    if (generation == sessionGeneration) {
+      cachedProfile = p;
+      try {
+        await (await SharedPreferences.getInstance())
+            .setString(_profileKey, jsonEncode(j));
+      } catch (_) {
+        // Only the quick start is lost.
+      }
+    }
+    return p;
+  }
+
+  Future<void> _forgetProfile() async {
+    final old = cachedProfile;
+    cachedProfile = null;
+    for (final url in [old?.fields['avatar'], old?.fields['banner']]) {
+      if (url != null && url.isNotEmpty) {
+        unawaited(
+            CachedNetworkImage.evictFromCache(url).catchError((_) => false));
+      }
+    }
+    try {
+      await (await SharedPreferences.getInstance()).remove(_profileKey);
+    } catch (_) {}
+  }
+
   Future<PixelProfile> publicProfile(String id) async =>
       PixelProfile.fromJson(Map<String, dynamic>.from(
           await _call(apiUrl, 'people/$id', authenticated: true)));

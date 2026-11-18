@@ -11,7 +11,11 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
+import 'package:keep_pixel/core/installer.dart';
+import 'package:keep_pixel/core/downloads.dart';
 import 'package:keep_pixel/main.dart';
+import 'package:keep_pixel/ui/downloads_page.dart';
+import 'package:keep_pixel/ui/style.dart';
 import 'package:keep_pixel/ui/settings.dart';
 import 'package:keep_pixel/ui/shell.dart';
 import 'preview_app.dart';
@@ -79,6 +83,7 @@ Future<void> shoot(WidgetTester tester, String name, Size size,
     {PreviewScene scene = PreviewScene.full,
     NavStyle nav = NavStyle.dock,
     bool web = false,
+    GameInstaller Function()? installer,
     Steps? steps}) async {
   tester.view.physicalSize = size * 2;
   tester.view.devicePixelRatio = 2;
@@ -92,7 +97,7 @@ Future<void> shoot(WidgetTester tester, String name, Size size,
           api: api!,
           navStyle: nav,
           web: web,
-          installerFactory: () => PreviewInstaller(),
+          installerFactory: installer ?? () => PreviewInstaller(),
           onDownloads:
               scene == PreviewScene.full && !web ? startDemoDownload : null)));
   await settle(tester);
@@ -151,7 +156,8 @@ void main() {
     },
     'settings': openSettings(null),
     for (final section in SettingsSection.values)
-      'settings-${section.name}': openSettings(section),
+      if (section != SettingsSection.storage)
+        'settings-${section.name}': openSettings(section),
     'game': (t) async {
       await t.tap(find.text('Об игре').first);
       await settle(t);
@@ -199,6 +205,58 @@ void main() {
       await t.tap(find.text('Добавить папку на диске'));
       await settle(t);
     });
+  });
+  testWidgets('phone storage', (t) async {
+    await shoot(t, 'phone-settings-storage', phone,
+        installer: () => PhonePreviewInstaller(),
+        steps: openSettings(SettingsSection.storage));
+  });
+  for (final (name, size) in [('desktop', desktop), ('phone', phone)]) {
+    testWidgets('$name two-factor', (t) async {
+      await shoot(t, '$name-settings-2fa', size, steps: (t) async {
+        await openSettings(SettingsSection.account)(t);
+        await t.tap(find.text('Двухфакторная аутентификация').first);
+        await settle(t);
+        await t.tap(find.text('Создать новые коды'));
+        await settle(t);
+        await t.enterText(find.byType(TextField).last, '123456');
+        await settle(t);
+        await t.tap(find.text('Создать'));
+        await settle(t);
+      });
+    });
+  }
+  testWidgets('desktop downloads page', (t) async {
+    t.view.physicalSize = desktop * 2;
+    t.view.devicePixelRatio = 2;
+    addTearDown(t.view.resetPhysicalSize);
+    addTearDown(t.view.resetDevicePixelRatio);
+    final api = await t.runAsync(() => previewApi(PreviewScene.full));
+    final downloads =
+        DownloadsController(api!, factory: () => PreviewInstaller());
+    final key = GlobalKey();
+    await t.pumpWidget(RepaintBoundary(
+        key: key,
+        child: MaterialApp(
+            debugShowCheckedModeBanner: false,
+            theme: kpTheme(),
+            home: Scaffold(
+                body: DownloadsPage(downloads: downloads, onLibrary: () {})))));
+    startDemoDownload(downloads);
+    await settle(t);
+    await t.runAsync(() async {
+      final boundary =
+          key.currentContext!.findRenderObject()! as RenderRepaintBoundary;
+      final image = await boundary.toImage(pixelRatio: 2);
+      final bytes = await image.toByteData(format: ui.ImageByteFormat.png);
+      await File('$out/desktop-downloads-page.png')
+          .writeAsBytes(bytes!.buffer.asUint8List());
+      image.dispose();
+    });
+    await t.pumpWidget(const SizedBox());
+    await t.pump(const Duration(seconds: 1));
+    downloads.dispose();
+    api.dispose();
   });
   testWidgets('desktop top menu', (t) async {
     await shoot(t, 'desktop-top-menu', desktop, nav: NavStyle.top);

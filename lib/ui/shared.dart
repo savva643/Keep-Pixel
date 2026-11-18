@@ -1,3 +1,4 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'style.dart';
@@ -45,13 +46,15 @@ class Artwork extends StatelessWidget {
         uri.userInfo.isNotEmpty) {
       return placeholder();
     }
-    return Image.network(url,
+    // Kept on disk, so pictures seen once open at once next time.
+    return CachedNetworkImage(
+        imageUrl: url,
         fit: BoxFit.cover,
         width: double.infinity,
         height: double.infinity,
-        errorBuilder: (_, __, ___) => placeholder(),
-        loadingBuilder: (_, child, progress) =>
-            progress == null ? child : placeholder());
+        fadeInDuration: const Duration(milliseconds: 150),
+        errorWidget: (_, __, ___) => placeholder(),
+        placeholder: (_, __) => placeholder());
   }
 }
 

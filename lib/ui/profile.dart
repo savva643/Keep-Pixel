@@ -99,11 +99,13 @@ class _ProfilePageState extends State<ProfilePage> {
   @override
   Widget build(BuildContext context) => FutureBuilder<PixelProfile>(
       future: profile,
+      // The saved copy shows at once; the fresh one replaces it quietly.
+      initialData: widget.api.cachedProfile,
       builder: (context, state) {
-        if (state.connectionState != ConnectionState.done) {
+        if (!state.hasData && !state.hasError) {
           return const Center(child: CircularProgressIndicator());
         }
-        if (state.hasError) {
+        if (state.hasError && widget.api.cachedProfile == null) {
           return StatePanel(
               icon: Icons.cloud_off_rounded,
               title: 'Профиль недоступен',
@@ -111,7 +113,7 @@ class _ProfilePageState extends State<ProfilePage> {
               action: 'Повторить',
               onAction: reload);
         }
-        final p = state.data!;
+        final p = state.data ?? widget.api.cachedProfile!;
         final settings = widget.onSettings;
         return KpPage(maxWidth: 920, children: [
           ProfileHeader(
