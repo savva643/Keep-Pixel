@@ -79,7 +79,11 @@ class ProfilePage extends StatefulWidget {
   /// Opens the settings on a category. Without it (over a game) the page only
   /// shows the profile.
   final void Function(SettingsSection? section)? onSettings;
-  const ProfilePage({super.key, required this.api, this.onSettings});
+
+  /// Opens the developer cabinet (publishing games).
+  final VoidCallback? onDeveloper;
+  const ProfilePage(
+      {super.key, required this.api, this.onSettings, this.onDeveloper});
   @override
   State<ProfilePage> createState() => _ProfilePageState();
 }
@@ -141,6 +145,32 @@ class _ProfilePageState extends State<ProfilePage> {
                       ? 'Расскажи о себе — в общем профиле или только здесь.'
                       : p.fields['bio']!,
                   style: const TextStyle(color: muted, height: 1.7))),
+          if (widget.onDeveloper != null) ...[
+            const SizedBox(height: 24),
+            KpPanel(
+                child: Row(children: [
+              Container(
+                  width: 44,
+                  height: 44,
+                  decoration: const BoxDecoration(
+                      gradient: Kp.gradient, borderRadius: Kp.r14),
+                  child: const Icon(Icons.rocket_launch_rounded,
+                      color: Colors.white)),
+              const SizedBox(width: 14),
+              const Expanded(
+                  child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                    Text('Для разработчиков',
+                        style: TextStyle(fontWeight: FontWeight.w800)),
+                    Text('Выпусти свою игру в Keep Pixel',
+                        style: TextStyle(color: muted)),
+                  ])),
+              FilledButton(
+                  onPressed: widget.onDeveloper,
+                  child: const Text('Открыть')),
+            ])),
+          ],
         ]);
       });
 }

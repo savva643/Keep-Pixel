@@ -10,7 +10,7 @@ class AppTray with TrayListener {
   final void Function(int page) onPage;
   AppTray({required this.onPage});
 
-  static const _pages = {'library': 1, 'friends': 2, 'downloads': 5};
+  static const _pages = {'library': 1, 'friends': 2, 'downloads': 5, 'developer': 6};
 
   Future<void> start() async {
     try {
@@ -24,6 +24,7 @@ class AppTray with TrayListener {
         MenuItem(key: 'library', label: 'Библиотека'),
         MenuItem(key: 'downloads', label: 'Загрузки'),
         MenuItem(key: 'friends', label: 'Друзья'),
+        MenuItem(key: 'developer', label: 'Для разработчиков'),
         MenuItem.separator(),
         MenuItem(key: 'quit', label: 'Выход'),
       ]));

@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'dart:async';
 import 'dart:io';
-import 'package:archive/archive.dart';
+import 'package:archive/archive_io.dart';
 import 'package:crypto/crypto.dart';
 import 'package:dio/dio.dart';
 import 'package:path/path.dart' as p;
@@ -384,7 +384,7 @@ class GameInstaller {
     if (uri.scheme != 'https' ||
         uri.userInfo.isNotEmpty ||
         size < 1 ||
-        size > 150 * 1024 * 1024 ||
+        size > maxPackageSize ||
         !RegExp(r'^[a-f0-9]{64}$').hasMatch(hash)) {
       throw const FormatException('Некорректный манифест игры');
     }
@@ -407,32 +407,57 @@ class GameInstaller {
         followRedirects: false));
     final cancel = _cancel = CancelToken();
     try {
+      // Resolve redirects once, then download with resume: a dropped
+      // connection continues from the bytes already on disk (HTTP Range).
       var current = uri;
       for (var redirects = 0;; redirects++) {
-        final response = await dio.downloadUri(current, archiveFile.path,
+        final head = await dio.headUri<void>(current,
             cancelToken: cancel,
             options: Options(
-                validateStatus: (s) =>
-                    s != null &&
-                    (s == 200 ||
-                        s == 301 ||
-                        s == 302 ||
-                        s == 303 ||
-                        s == 307 ||
-                        s == 308)), onReceiveProgress: (received, _) {
-          if (received > size) {
-            cancel.cancel('Размер архива превышает манифест');
-          } else {
-            progress(received / size * .8);
+                followRedirects: false,
+                validateStatus: (s) => s != null && s < 400));
+        final location = head.headers.value('location');
+        if (head.statusCode != null && head.statusCode! >= 300 && location != null) {
+          if (redirects >= 5) {
+            throw const FormatException('Слишком много перенаправлений загрузки');
           }
-        });
-        if (response.statusCode == 200) break;
-        if (redirects >= 5 || response.headers.value('location') == null) {
-          throw const FormatException('Слишком много перенаправлений загрузки');
+          current = current.resolve(location);
+          if (current.scheme != 'https' || current.userInfo.isNotEmpty) {
+            throw const FormatException('Небезопасное перенаправление загрузки');
+          }
+          continue;
         }
-        current = current.resolve(response.headers.value('location')!);
-        if (current.scheme != 'https' || current.userInfo.isNotEmpty) {
-          throw const FormatException('Небезопасное перенаправление загрузки');
+        break;
+      }
+      for (var attempt = 0;; attempt++) {
+        final have = await archiveFile.exists() ? await archiveFile.length() : 0;
+        if (have == size) break;
+        if (have > size) {
+          throw const FormatException('Размер архива превышает манифест');
+        }
+        try {
+          final response = await dio.downloadUri(current, archiveFile.path,
+              cancelToken: cancel,
+              fileAccessMode:
+                  have > 0 ? FileAccessMode.append : FileAccessMode.write,
+              options: Options(
+                  headers: have > 0 ? {'range': 'bytes=$have-'} : null,
+                  validateStatus: (s) => s == 200 || s == 206),
+              onReceiveProgress: (received, _) {
+            if (have + received > size) {
+              cancel.cancel('Размер архива превышает манифест');
+            } else {
+              progress((have + received) / size * .8);
+            }
+          });
+          // A server that ignores Range sends everything again from the start.
+          if (have > 0 && response.statusCode == 200) {
+            await archiveFile.delete();
+            continue;
+          }
+        } on DioException catch (e) {
+          if (CancelToken.isCancel(e) || attempt >= 6) rethrow;
+          await Future.delayed(Duration(seconds: 2 << attempt.clamp(0, 4)));
         }
       }
       if (cancel.isCancelled) throw cancel.cancelError!;
@@ -509,39 +534,55 @@ class GameInstaller {
   void cancel() => _cancel?.cancel('Загрузка отменена');
 }
 
+/// Largest download the launcher accepts; the store checks the same.
+const maxPackageSize = 64 * 1024 * 1024 * 1024;
+const _maxFiles = 200000;
+const _maxUnpacked = 64 * 1024 * 1024 * 1024;
+
+/// Unpacks the game file by file from disk: a game of several gigabytes never
+/// sits in memory as a whole.
 void extractPackage(Map<String, String> input) {
-  final archive = ZipDecoder()
-      .decodeBytes(File(input['archive']!).readAsBytesSync(), verify: true);
-  if (archive.length > 10000) {
-    throw const FormatException('Слишком много файлов в архиве');
-  }
-  final seen = <String>{};
-  var total = 0;
-  for (final file in archive) {
-    final relative = safePackagePath(file.name);
-    if (file.isSymbolicLink ||
-        !seen.add(relative.toLowerCase()) ||
-        relative.toLowerCase() == '.keep-pixel.json') {
-      throw const FormatException('Недопустимый файл в архиве');
+  final stream = InputFileStream(input['archive']!);
+  try {
+    final archive = ZipDecoder().decodeStream(stream, verify: true);
+    if (archive.length > _maxFiles) {
+      throw const FormatException('Слишком много файлов в архиве');
     }
-    total += file.size;
-    if (file.size < 0 || total > 512 * 1024 * 1024) {
-      throw const FormatException('Слишком большой игровой архив');
-    }
-  }
-  for (final file in archive) {
-    final relative = safePackagePath(file.name);
-    final path = p.joinAll([input['destination']!, ...relative.split('/')]);
-    if (file.isFile) {
-      final output = File(path)..parent.createSync(recursive: true);
-      final content = file.content as List<int>;
-      if (content.length != file.size) {
-        throw const FormatException('Повреждённый файл в архиве');
+    final seen = <String>{};
+    var total = 0;
+    for (final file in archive) {
+      final relative = safePackagePath(file.name);
+      if (file.isSymbolicLink ||
+          !seen.add(relative.toLowerCase()) ||
+          relative.toLowerCase() == '.keep-pixel.json') {
+        throw const FormatException('Недопустимый файл в архиве');
       }
-      output.writeAsBytesSync(content);
-    } else {
-      Directory(path).createSync(recursive: true);
+      total += file.size;
+      if (file.size < 0 || total > _maxUnpacked) {
+        throw const FormatException('Слишком большой игровой архив');
+      }
     }
+    for (final file in archive) {
+      final relative = safePackagePath(file.name);
+      final path = p.joinAll([input['destination']!, ...relative.split('/')]);
+      if (file.isFile) {
+        File(path).parent.createSync(recursive: true);
+        final output = OutputFileStream(path);
+        try {
+          file.writeContent(output);
+        } finally {
+          output.closeSync();
+        }
+        if (File(path).lengthSync() != file.size) {
+          throw const FormatException('Повреждённый файл в архиве');
+        }
+        file.clear();
+      } else {
+        Directory(path).createSync(recursive: true);
+      }
+    }
+  } finally {
+    stream.closeSync();
   }
   if (!File(p.joinAll([
     input['destination']!,

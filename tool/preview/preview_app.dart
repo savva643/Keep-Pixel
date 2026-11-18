@@ -401,6 +401,20 @@ Future<PixelApi> previewApi(PreviewScene scene) async {
             'overrides': {}
           });
         }
+        if (path == '/dev/me') {
+          return reply({
+            'developer': {
+              'display_name': 'Rivok Team',
+              'studio': 'Rivok Studio',
+              'contact_email': 'team@rivok.example',
+              'status': 'active'
+            },
+            'is_admin': true,
+            'limits': {'max_build': 8 << 30, 'chunk_size': 8 << 20}
+          });
+        }
+        if (path == '/dev/games') return reply(_devGames);
+        if (path.startsWith('/dev/games/')) return reply(_devGame);
         if (path.endsWith('/2fa/status')) {
           return reply({
             'isEnabled': true,
@@ -436,3 +450,87 @@ void startDemoDownload(DownloadsController downloads) {
         id: g.id, title: g.title, version: g.version, metadata: g.metadata));
   });
 }
+
+final _devGames = [
+  {
+    'id': 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+    'title': 'Rivok',
+    'status': 'review',
+    'store_status': 'pending',
+    'cover': '',
+    'latest_build': {'id': 'b1', 'version': '0.3.0', 'status': 'review', 'size': 1610612736}
+  },
+  {
+    'id': 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+    'title': 'Neon Drift',
+    'status': 'published',
+    'store_status': 'approved',
+    'cover': '',
+    'latest_build': {'id': 'b2', 'version': '1.2.0', 'status': 'live', 'size': 734003200}
+  },
+];
+
+final _devGame = {
+  ..._devGames.first,
+  'short_description': 'Антигравитационные гонки на парящих кораблях',
+  'description': 'Гонки на высоких скоростях по футуристическим трассам. ' * 4,
+  'genre': 'Гонки',
+  'engine': 'unreal',
+  'age_rating': '12+',
+  'tags': ['Гонки', 'Футуризм'],
+  'features': ['Мультиплеер', 'Поддержка геймпада'],
+  'languages': ['Русский', 'English'],
+  'screenshots': ['', '', ''],
+  'banner': '',
+  'trailer': 'https://www.youtube.com/watch?v=demo',
+  'requirements': {
+    'minimum': {'os': 'Windows 10', 'memory': '8 ГБ'},
+    'recommended': {'os': 'Windows 11', 'memory': '16 ГБ'}
+  },
+  'social': {'web': 'https://rivok.example'},
+  'achievements': [
+    {'title': 'Первый финиш', 'description': 'Финишируйте в любой гонке'}
+  ],
+  'publish_mode': 'scheduled',
+  'publish_at': '2026-12-01T12:00:00Z',
+  'missing': <String>[],
+  'builds': [
+    {
+      'id': 'b1',
+      'version': '0.3.0',
+      'status': 'review',
+      'size': 1610612736,
+      'executable': 'Rivok/Binaries/Win64/Rivok.exe',
+      'notes': 'Мультиплеер и оверлей',
+      'created_at': '2026-11-18T10:00:00Z',
+      'scan': {
+        'engine': 'unreal',
+        'archive': {'files': 1843, 'unpacked': 4509715660},
+        'executable': {'arch': 'x64', 'subsystem': 'gui'},
+        'antivirus': {'engine': 'ClamAV', 'status': 'clean'},
+        'problems': []
+      },
+      'sdk': {
+        'detected': true,
+        'evidence': ['код в Rivok/Binaries/Win64/Rivok.exe']
+      }
+    },
+    {
+      'id': 'b0',
+      'version': '0.2.9',
+      'status': 'scan_failed',
+      'size': 1500000000,
+      'executable': 'Rivok.exe',
+      'created_at': '2026-11-17T10:00:00Z',
+      'scan': {
+        'problems': ['В архиве нет файла запуска Rivok.exe']
+      },
+      'sdk': {'detected': false}
+    }
+  ],
+  'history': [
+    {'action': 'submitted', 'role': 'developer', 'created_at': '2026-11-18T11:00:00Z'},
+    {'action': 'scan_passed', 'role': 'system', 'note': 'Проверки пройдены, найден Keep Pixel SDK', 'created_at': '2026-11-18T10:20:00Z'},
+    {'action': 'created', 'role': 'developer', 'created_at': '2026-11-17T09:00:00Z'},
+  ],
+};

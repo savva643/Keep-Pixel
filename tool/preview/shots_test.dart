@@ -226,6 +226,40 @@ void main() {
       });
     });
   }
+  for (final (name, size) in [('desktop', desktop), ('phone', phone)]) {
+    Future<void> hub(WidgetTester t) async {
+      await t.tap(find.text('Профиль').last);
+      await settle(t);
+      await t.scrollUntilVisible(find.text('Для разработчиков'), 200,
+          scrollable: find.byType(Scrollable).last);
+      await t.tap(find.text('Открыть').last);
+      await settle(t);
+    }
+
+    testWidgets('$name developer hub', (t) async {
+      await shoot(t, '$name-developer-hub', size, steps: hub);
+    });
+    for (final (i, tab) in ['Обзор', 'Витрина', 'Сборки', 'Публикация'].indexed) {
+      testWidgets('$name developer game $tab', (t) async {
+        await shoot(t, '$name-developer-game-$i', size, steps: (t) async {
+          await hub(t);
+          await t.tap(find.text('Rivok').first);
+          await settle(t);
+          if (i > 0) {
+            await t.tap(find.widgetWithText(Tab, tab));
+            await settle(t);
+          }
+        });
+      });
+    }
+    testWidgets('$name sdk kits', (t) async {
+      await shoot(t, '$name-developer-sdk', size, steps: (t) async {
+        await hub(t);
+        await t.tap(find.text('Открыть').first);
+        await settle(t);
+      });
+    });
+  }
   testWidgets('desktop downloads page', (t) async {
     t.view.physicalSize = desktop * 2;
     t.view.devicePixelRatio = 2;

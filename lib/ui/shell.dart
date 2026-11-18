@@ -10,6 +10,7 @@ import '../core/installer.dart';
 import 'auth_dialog.dart';
 import 'catalog.dart';
 import 'downloads.dart';
+import 'developer/developer_hub.dart';
 import 'downloads_page.dart';
 import 'friends.dart';
 import 'game_overlay.dart';
@@ -210,7 +211,8 @@ class _PixelShellState extends State<PixelShell> with WidgetsBindingObserver {
                 key: ValueKey(
                     'profile-${widget.api.sessionGeneration}-${widget.api.profileRevision}'),
                 api: widget.api,
-                onSettings: openSettings)
+                onSettings: openSettings,
+                onDeveloper: () => select(_developerPage))
             : StatePanel(
                 icon: Icons.account_circle_outlined,
                 title: 'Твой профиль Keep Pixel',
@@ -222,6 +224,10 @@ class _PixelShellState extends State<PixelShell> with WidgetsBindingObserver {
                 onSecondaryAction: openSettings),
         _downloadsPage =>
           DownloadsPage(downloads: downloads, onLibrary: () => select(1)),
+        _developerPage => DeveloperHub(
+            key: ValueKey('developer-${widget.api.sessionGeneration}'),
+            api: widget.api,
+            onSignIn: () => showLogin(context, widget.api)),
         _ => SettingsView(
             key: ValueKey('settings-$_settingsOpened'),
             api: widget.api,
@@ -259,7 +265,7 @@ class _PixelShellState extends State<PixelShell> with WidgetsBindingObserver {
         final pages = PagePulse(
             trigger: page,
             child: IndexedStack(index: page, children: [
-              for (var i = 0; i <= _downloadsPage; i++)
+              for (var i = 0; i <= _developerPage; i++)
                 if (visited.contains(i))
                   TickerMode(enabled: page == i, child: content(i))
                 else
@@ -385,6 +391,7 @@ class _PixelShellState extends State<PixelShell> with WidgetsBindingObserver {
 
 const _wideLayout = 760.0;
 const _downloadsPage = 5;
+const _developerPage = 6;
 const _dockGap = 18.0, _dockHeight = 68.0;
 const _dockClearance = _dockGap + _dockHeight + 18;
 

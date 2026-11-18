@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'auth/necsoura_password.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:http/http.dart' as http;
+import 'developer.dart';
 import 'models.dart';
 import 'runtime.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -586,6 +587,112 @@ class PixelApi extends ChangeNotifier {
           body: {'game_id': gameId},
           authenticated: true) as Map)['success'] ==
       true;
+
+  // ---- Developer cabinet: storefront, builds, publishing (see developer.dart) ----
+
+  Future<DeveloperAccount> developerAccount() async => DeveloperAccount.fromJson(
+      Map<String, dynamic>.from(
+          await _call(apiUrl, 'dev/me', authenticated: true) as Map));
+
+  Future<DeveloperAccount> saveDeveloper(Map<String, dynamic> profile) async {
+    await _call(apiUrl, 'dev/me',
+        method: 'PUT', body: profile, authenticated: true);
+    return developerAccount();
+  }
+
+  Future<List<DevGame>> developerGames() async =>
+      ((await _call(apiUrl, 'dev/games', authenticated: true)) as List)
+          .map((g) => DevGame(Map<String, dynamic>.from(g as Map)))
+          .toList();
+
+  Future<DevGame> createDeveloperGame(String title) async => DevGame(
+      Map<String, dynamic>.from(await _call(apiUrl, 'dev/games',
+          method: 'POST', body: {'title': title}, authenticated: true) as Map));
+
+  Future<DevGame> developerGame(String id) async => DevGame(
+      Map<String, dynamic>.from(
+          await _call(apiUrl, 'dev/games/$id', authenticated: true) as Map));
+
+  Future<DevGame> updateDeveloperGame(
+          String id, Map<String, dynamic> patch) async =>
+      DevGame(Map<String, dynamic>.from(await _call(apiUrl, 'dev/games/$id',
+          method: 'PATCH', body: patch, authenticated: true) as Map));
+
+  Future<void> deleteDeveloperGame(String id) =>
+      _call(apiUrl, 'dev/games/$id', method: 'DELETE', authenticated: true);
+
+  Future<DevGame> developerAction(String id, String action,
+          {Map<String, dynamic>? body}) async =>
+      DevGame(Map<String, dynamic>.from(await _call(
+          apiUrl, 'dev/games/$id/$action',
+          method: action == 'publishing' ? 'PUT' : 'POST',
+          body: body ?? {},
+          authenticated: true) as Map));
+
+  Future<DevGame> uploadStoreImage(
+      String id, String kind, Uint8List bytes) async {
+    final data = await _sendBytes(
+        'POST', 'dev/games/$id/media?kind=$kind', bytes);
+    return DevGame(Map<String, dynamic>.from(data['game'] as Map));
+  }
+
+  Future<Map<String, dynamic>> createBuild(
+          String gameId, Map<String, dynamic> build) async =>
+      Map<String, dynamic>.from(await _call(apiUrl, 'dev/games/$gameId/builds',
+          method: 'POST', body: build, authenticated: true) as Map);
+
+  Future<DevBuild> buildState(String buildId) async => DevBuild(
+      Map<String, dynamic>.from(
+          await _call(apiUrl, 'dev/builds/$buildId', authenticated: true)
+              as Map));
+
+  Future<void> uploadBuildChunk(String buildId, int n, Uint8List bytes) =>
+      _sendBytes('PUT', 'dev/builds/$buildId/chunks/$n', bytes);
+
+  Future<void> completeBuild(String buildId) => _call(
+      apiUrl, 'dev/builds/$buildId/complete',
+      method: 'POST', authenticated: true);
+
+  Future<void> deleteBuild(String buildId) =>
+      _call(apiUrl, 'dev/builds/$buildId', method: 'DELETE', authenticated: true);
+
+  /// A binary request body (store images, build chunks), with one token renewal.
+  Future<dynamic> _sendBytes(String method, String path, Uint8List bytes,
+      {bool retry = true}) async {
+    if (_token == null) throw const ApiError('Войдите в Necsoura', status: 401);
+    final request = http.Request(method, Uri.parse('$apiUrl/$path'))
+      ..headers.addAll({
+        ...deviceHeaders,
+        'Content-Type': 'application/octet-stream',
+        'Authorization': 'Bearer $_token'
+      })
+      ..bodyBytes = bytes;
+    http.Response response;
+    try {
+      response = await http.Response.fromStream(
+              await client.send(request).timeout(const Duration(minutes: 2)))
+          .timeout(const Duration(minutes: 2));
+    } on TimeoutException {
+      throw const ApiError('Сервер долго не отвечает');
+    } on http.ClientException {
+      throw const ApiError('Нет соединения с сервером');
+    }
+    if (response.statusCode == 401 && retry && await refreshSession()) {
+      return _sendBytes(method, path, bytes, retry: false);
+    }
+    dynamic data;
+    if (response.bodyBytes.isNotEmpty) {
+      try {
+        data = jsonDecode(utf8.decode(response.bodyBytes));
+      } catch (_) {}
+    }
+    if (response.statusCode >= 400) {
+      throw ApiError(
+          data is Map ? '${data['message'] ?? 'Ошибка сервера'}' : 'Ошибка ${response.statusCode}',
+          status: response.statusCode);
+    }
+    return data;
+  }
 
   Future<void> presence({String status = 'online', String? gameId}) async =>
       _call(apiUrl, 'me/presence',
