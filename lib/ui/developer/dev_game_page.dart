@@ -967,7 +967,9 @@ class _BuildCard extends StatelessWidget {
       if (s['engine'] != null) row('Движок', engines[s['engine']] ?? '${s['engine']}'),
       if (av.isNotEmpty)
         row('Антивирус', switch (av['status']) {
-          'clean' => 'чисто',
+          'clean' => (av['skipped'] as List?)?.isNotEmpty == true
+              ? 'чисто; файлы от 2 ГБ антивирус не проверяет, их посмотрит модератор'
+              : 'чисто',
           'infected' => 'угрозы: ${(av['found'] as List?)?.join(', ')}',
           'unavailable' => 'в очереди, проверка скоро',
           _ => 'ошибка проверки'
